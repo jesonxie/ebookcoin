@@ -11,7 +11,7 @@ function Milestones() {
 
 	var distance = Math.floor(constants.rewards.distance), // Distance between each milestone
 	    rewardOffset = Math.floor(constants.rewards.offset); // Start rewards at block (n)
-
+	//返回height的整数绝对值
 	var parseHeight = function (height) {
 		height = parseInt(height);
 
@@ -21,18 +21,19 @@ function Milestones() {
 			return Math.abs(height);
 		}
 	};
-
+	
 	this.calcMilestone = function (height) {
 		var location = parseInt(parseHeight(height - rewardOffset) / distance),
 		    lastMile = milestones[milestones.length - 1];
-
+		//如果块高度大于2*500000000=1000000000，则以后每生产一个块都是固定的100000000奖励
+		//块高度小于2*500000000=1000000000时，根据计算结果可在milestones[]数组中得到对应的产生快的奖励
 		if (location > (milestones.length - 1)) {
 			return milestones.lastIndexOf(lastMile);
 		} else {
 			return location;
 		}
 	};
-
+	//计算产生区块的奖励
 	this.calcReward = function (height) {
 		var height = parseHeight(height);
 
