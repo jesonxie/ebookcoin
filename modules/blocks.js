@@ -71,7 +71,7 @@ privated.blocksDataFields = {
 	't_signatures': String
 };
 // @formatter:on
-privated.loaded = false;
+privated.loaded = false;//加载完本地区块链后变成true
 privated.isActive = false;
 
 // Constructor
@@ -81,13 +81,14 @@ function Blocks(cb, scope) {
 	self = this;
 	self.__private = privated;
 	privated.attachApi();
-
+	//保存创世区块
 	privated.saveGenesisBlock(function (err) {
 		setImmediate(cb, err, self);
 	});
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -118,14 +119,14 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: err.toString()});
 	});
 };
-
+//保存创世区块
 privated.saveGenesisBlock = function (cb) {
 	library.dbLite.query("SELECT id FROM blocks WHERE id=$id", {id: genesisblock.block.id}, ['id'], function (err, rows) {
 		if (err) {
 			return cb(err);
 		}
 		var blockId = rows.length && rows[0].id;
-
+		//软件初始化后blocks表为空，所以查询得到的结果是rows.length=0，所以blockId=0
 		if (!blockId) {
 			privated.saveBlock(genesisblock.block, function (err) {
 				if (err) {
@@ -139,7 +140,7 @@ privated.saveGenesisBlock = function (cb) {
 		}
 	});
 };
-
+//根据 blockId删除本地blocks表的一个block
 privated.deleteBlock = function (blockId, cb) {
 	library.dbLite.query("DELETE FROM blocks WHERE id = $id", {id: blockId}, function (err, res) {
 		cb(err, res);
@@ -249,7 +250,7 @@ privated.list = function (filter, cb) {
 		});
 	});
 };
-
+//根据blockId取块
 privated.getById = function (id, cb) {
 	library.dbLite.query("select b.id, b.version, b.timestamp, b.height, b.previousBlock, b.numberOfTransactions, b.totalAmount, b.totalFee, b.reward, b.payloadLength,  lower(hex(b.payloadHash)), lower(hex(b.generatorPublicKey)), lower(hex(b.blockSignature)), (select max(height) + 1 from blocks) - b.height " +
 		"from blocks b " +
@@ -262,18 +263,19 @@ privated.getById = function (id, cb) {
 		cb(null, block);
 	});
 };
-
+//保存进blocks表
 privated.saveBlock = function (block, cb) {
 	library.dbLite.query('BEGIN TRANSACTION;');
-
+	//实际保存操作调用的函数
 	library.logic.block.dbSave(block, function (err) {
+		//如果保存出错则回滚
 		if (err) {
 			library.dbLite.query('ROLLBACK;', function (rollbackErr) {
 				cb(rollbackErr || err);
 			});
 			return;
 		}
-
+		//无错则将该块中的所有交易写进transaction表
 		async.eachSeries(block.transactions, function (transaction, cb) {
 			transaction.blockId = block.id;
 			library.logic.transaction.dbSave(transaction, cb);
@@ -334,9 +336,9 @@ privated.getIdSequence = function (height, cb) {
 		'SELECT id, max(height) as height ' +
 		'FROM blocks ' +
 		'group by (cast(height / $delegates as integer) + (case when height % $delegates > 0 then 1 else 0 end)) having height <= $height ' +
-		'union ' +
+		'union ' +//联合查询
 		'select id, 1 as height ' +
-		'from blocks where height = 1 ' +
+		'from blocks where height = 1 ' +//这里相当于一个恒真表达式
 		'order by height desc ' +
 		'limit $limit ' +
 		') s', {
@@ -352,7 +354,7 @@ privated.getIdSequence = function (height, cb) {
 		cb(null, rows[0]);
 	})
 };
-
+//将从blocks表中读出的多行转化成对应的多个块（保留部分重要属性）
 privated.readDbRows = function (rows) {
 	var blocks = {};
 	var order = [];
@@ -387,7 +389,7 @@ privated.readDbRows = function (rows) {
 
 	return blocks;
 };
-
+//调用此方法将经过验证后的交易写进本地transaction表
 privated.applyTransaction = function (block, transaction, sender, cb) {
 	modules.transactions.applyUnconfirmed(transaction, sender, function (err) {
 		if (err) {
@@ -416,11 +418,13 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 	var commonBlock = null;
 	var lastBlockHeight = height;
 	var count = 0;
-
+	
 	async.whilst(
+		//循环条件
 		function () {
 			return !commonBlock && count < 30 && lastBlockHeight > 1;
 		},
+		//主循环函数(循环了30次)
 		function (next) {
 			count++;
 			privated.getIdSequence(lastBlockHeight, function (err, data) {
@@ -430,7 +434,7 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 				var max = lastBlockHeight;
 				lastBlockHeight = data.firstHeight;
 				modules.transport.getFromPeer(peer, {
-					api: "/blocks/common?ids=" + data.ids + '&max=' + max + '&min=' + lastBlockHeight,
+					api: "/blocks/common?ids=" + data.ids + '&max=' + max + '&min=' + lastBlockHeight,//这里存疑，blocks模块没有common对应的api
 					method: "GET"
 				}, function (err, data) {
 					if (err || data.body.error) {
@@ -465,7 +469,7 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 		}
 	);
 };
-
+//查整个blocks表有多少个块
 Blocks.prototype.count = function (cb) {
 	library.dbLite.query("select count(rowid) from blocks", {"count": Number}, function (err, rows) {
 		if (err) {
@@ -578,7 +582,7 @@ Blocks.prototype.loadBlocksPart = function (filter, cb) {
 		cb(err, blocks);
 	});
 };
-
+//从本地blocks表中加载380个数据块并验证
 Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 	var newLimit = limit + (offset || 0);
 	var params = {limit: newLimit, offset: offset || 0};
@@ -631,7 +635,7 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 									});
 								}
 
-								try {
+								try {	//验证块签名
 									var valid = library.logic.block.verifySignature(block);
 								} catch (e) {
 									return setImmediate(cb, {
@@ -646,7 +650,7 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 										block: block
 									});
 								}
-
+								//验证块时段
 								modules.delegates.validateBlockSlot(block, function (err) {
 									if (err) {
 										return cb({
@@ -663,7 +667,9 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 							setImmediate(cb);
 						}
 					}, function (cb) {
+						//给交易排序，让投票或签名排在前面
 						block.transactions = block.transactions.sort(function (a, b) {
+							//排队条件
 							if (block.id == genesisblock.block.id) {
 								if (a.type == TransactionTypes.VOTE)
 									return 1;
@@ -675,7 +681,7 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 
 							return 0;
 						});
-
+						//验证每一笔交易
 						async.eachSeries(block.transactions, function (transaction, cb) {
 							if (verify) {
 								modules.accounts.setAccountAndGet({publicKey: transaction.senderPublicKey}, function (err, sender) {
@@ -695,6 +701,7 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 													block: block
 												});
 											}
+											//将经过验证后的交易写进本地transaction表
 											privated.applyTransaction(block, transaction, sender, cb);
 										});
 									} else {
@@ -705,11 +712,13 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 								setImmediate(cb);
 							}
 						}, function (err) {
-							if (err) {
+							if (err) {//如果某一笔交易验证出错
 								library.logger.error(err);
+								//找到最后一个有效的交易的id
 								var lastValidTransaction = block.transactions.findIndex(function (trs) {
 									return trs.id == err.transaction.id;
 								});
+								//将这个块中出错交易id之前的所有交易取出回滚
 								var transactions = block.transactions.slice(0, lastValidTransaction + 1);
 								async.eachSeries(transactions.reverse(), function (transaction, cb) {
 									async.series([
@@ -718,9 +727,11 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 												if (err) {
 													return cb(err);
 												}
+												//根据交易内容反向修改transaction表及其他关联表的各列(无u_前缀的列)的值
 												modules.transactions.undo(transaction, block, sender, cb);
 											});
 										}, function (cb) {
+											//根据交易内容反向修改transaction表及其他关联表的各列(带有u_前缀的列)的值
 											modules.transactions.undoUnconfirmed(transaction, cb);
 										}
 									], cb);
@@ -739,7 +750,7 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 		});
 	}, cb);
 };
-
+//取得本地blocks表的最新的块
 Blocks.prototype.loadLastBlock = function (cb) {
 	library.dbSequence.add(function (cb) {
 		library.dbLite.query("SELECT " +
@@ -1122,7 +1133,7 @@ Blocks.prototype.deleteBlocksBefore = function (block, cb) {
 		}
 	);
 };
-
+//产生一个区块入口函数
 Blocks.prototype.generateBlock = function (keypair, timestamp, cb) {
 	var transactions = modules.transactions.getUnconfirmedTransactionList();
 	var ready = [];
