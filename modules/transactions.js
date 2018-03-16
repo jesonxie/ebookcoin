@@ -18,7 +18,7 @@ privated.hiddenTransactions = [];
 privated.unconfirmedTransactions = [];
 privated.unconfirmedTransactionsIdIndex = {};
 privated.doubleSpendingTransactions = {};
-
+//SEND交易类型的处理方法
 function Transfer() {
 	this.create = function (data, trs) {
 		trs.recipientId = data.recipientId;
@@ -130,7 +130,7 @@ function Transactions(cb, scope) {
 	self = this;
 	self.__private = privated;
 	privated.attachApi();
-
+	//注册send交易类型及该类型交易的处理方法
 	library.logic.transaction.attachAssetType(TransactionTypes.SEND, new Transfer());
 
 	setImmediate(cb, null, self);
@@ -164,7 +164,7 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: err.toString()});
 	});
 }
-
+//取得某个交易的具体信息
 privated.list = function (filter, cb) {
 	var sortFields = ['t.id', 't.blockId', 't.amount', 't.fee', 't.type', 't.timestamp', 't.senderPublicKey', 't.senderId', 't.recipientId', 't.senderUsername', 't.recipientUsername', 't.confirmations', 'b.height'];
 	var params = {}, fields_or = [], owner = "";
@@ -333,14 +333,14 @@ Transactions.prototype.removeUnconfirmedTransaction = function (id) {
 	delete privated.unconfirmedTransactionsIdIndex[id];
 	privated.unconfirmedTransactions[index] = false;
 }
-
+//对新产生的交易进行处理
 Transactions.prototype.processUnconfirmedTransaction = function (transaction, broadcast, cb) {
 	modules.accounts.setAccountAndGet({publicKey: transaction.senderPublicKey}, function (err, sender) {
 		function done(err) {
 			if (err) {
 				return cb(err);
 			}
-
+			
 			privated.addUnconfirmedTransaction(transaction, sender, function (err) {
 				if (err) {
 					return cb(err);
@@ -395,7 +395,7 @@ Transactions.prototype.processUnconfirmedTransaction = function (transaction, br
 		}
 	});
 }
-
+//applyUnconfirmed多个交易
 Transactions.prototype.applyUnconfirmedList = function (ids, cb) {
 	async.eachSeries(ids, function (id, cb) {
 		var transaction = self.getUnconfirmedTransaction(id);
@@ -415,7 +415,7 @@ Transactions.prototype.applyUnconfirmedList = function (ids, cb) {
 		});
 	}, cb);
 }
-
+//undoUnconfirmed多个交易
 Transactions.prototype.undoUnconfirmedList = function (cb) {
 	var ids = [];
 	async.eachSeries(privated.unconfirmedTransactions, function (transaction, cb) {
@@ -429,15 +429,15 @@ Transactions.prototype.undoUnconfirmedList = function (cb) {
 		cb(err, ids);
 	})
 }
-
+//根据交易内容修改transaction表及其他关联表的各列(无u_前缀的列)的值
 Transactions.prototype.apply = function (transaction, block, sender, cb) {
 	library.logic.transaction.apply(transaction, block, sender, cb);
 }
-
+//根据交易内容反向修改transaction表及其他关联表的各列(无u_前缀的列)的值
 Transactions.prototype.undo = function (transaction, block, sender, cb) {
 	library.logic.transaction.undo(transaction, block, sender, cb);
 }
-
+//根据交易内容修改transaction表及其他关联表的各列(带有u_前缀的列)的值
 Transactions.prototype.applyUnconfirmed = function (transaction, sender, cb) {
 	if (!sender && transaction.blockId != genesisblock.block.id) {
 		return cb("Invalid account");
@@ -451,7 +451,7 @@ Transactions.prototype.applyUnconfirmed = function (transaction, sender, cb) {
 				if (!requester) {
 					return cb("Invalid requester");
 				}
-
+				//实际调用的修改函数
 				library.logic.transaction.applyUnconfirmed(transaction, sender, requester, cb);
 			});
 		} else {
@@ -459,7 +459,7 @@ Transactions.prototype.applyUnconfirmed = function (transaction, sender, cb) {
 		}
 	}
 }
-
+//根据交易内容反向修改transaction表及其他关联表的各列(带有u_前缀的列)的值
 Transactions.prototype.undoUnconfirmed = function (transaction, cb) {
 	modules.accounts.getAccount({publicKey: transaction.senderPublicKey}, function (err, sender) {
 		if (err) {
@@ -468,7 +468,7 @@ Transactions.prototype.undoUnconfirmed = function (transaction, cb) {
 		library.logic.transaction.undoUnconfirmed(transaction, sender, cb);
 	});
 }
-
+//接收新产生的交易并对交易进行处理
 Transactions.prototype.receiveTransactions = function (transactions, cb) {
 	async.eachSeries(transactions, function (transaction, cb) {
 		self.processUnconfirmedTransaction(transaction, true, cb);
