@@ -30,6 +30,7 @@ function Loader(cb, scope) {
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -61,7 +62,7 @@ privated.syncTrigger = function (turnOn) {
 		});
 	}
 };
-
+//从其他节点加载所有区块，也即是整个blocks表
 privated.loadFullDb = function (peer, cb) {
 	var peerStr = peer ? ip.fromLong(peer.ip) + ":" + peer.port : 'unknown';
 
@@ -71,12 +72,12 @@ privated.loadFullDb = function (peer, cb) {
 
 	modules.blocks.loadBlocksFromPeer(peer, commonBlockId, cb);
 };
-
+//从其他节点更新本地缺失的块
 privated.findUpdate = function (lastBlock, peer, cb) {
 	var peerStr = peer ? ip.fromLong(peer.ip) + ":" + peer.port : 'unknown';
 
 	library.logger.info("Looking for common block with " + peerStr);
-
+	//从其他节点获得比本地区块高度小的一个正常块
 	modules.blocks.getCommonBlock(peer, lastBlock.height, function (err, commonBlock) {
 		if (err || !commonBlock) {
 			return cb(err);
@@ -125,7 +126,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 				},
 				function (cb) {
 					library.logger.debug("Loading blocks from peer " + peerStr);
-
+					//从其他节点加载正常block之后所有的块
 					modules.blocks.loadBlocksFromPeer(peer, commonBlock.id, function (err, lastValidBlock) {
 						if (err) {
 							modules.transactions.deleteHiddenTransaction();
@@ -527,10 +528,10 @@ Loader.prototype.onPeerReady = function () {
 		});
 	});
 };
-
+//接收到app.js发的bind信号后执行
 Loader.prototype.onBind = function (scope) {
 	modules = scope;
-
+//加载本地区块链
 	privated.loadBlockChain();
 };
 
