@@ -330,7 +330,7 @@ privated.popLastBlock = function (oldLastBlock, cb) {
 		});
 	}, cb);
 };
-
+//获取最新一轮的第一个模块的高度
 privated.getIdSequence = function (height, cb) {
 	library.dbLite.query("SELECT s.height, group_concat(s.id) from ( " +
 		'SELECT id, max(height) as height ' +
@@ -414,6 +414,7 @@ privated.applyTransaction = function (block, transaction, sender, cb) {
 };
 
 // Public methods
+//从某个节点获得正常块
 Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 	var commonBlock = null;
 	var lastBlockHeight = height;
@@ -803,11 +804,11 @@ Blocks.prototype.loadLastBlock = function (cb) {
 		});
 	}, cb);
 };
-
+//取得全局变量所保存的最新块
 Blocks.prototype.getLastBlock = function () {
 	return privated.lastBlock;
 };
-
+//处理新块的内容
 Blocks.prototype.processBlock = function (block, broadcast, cb) {
 	if (!privated.loaded) {
 		return setImmediate(cb, "Blockchain is loading");
@@ -821,7 +822,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 			return setImmediate(cb, e.toString());
 		}
 		block.height = privated.lastBlock.height + 1;
-
+		//把该块的所有交易变成uncomfirmed，重新验证一遍
 		modules.transactions.undoUnconfirmedList(function (err, unconfirmedTransactions) {
 			if (err) {
 				privated.isActive = false;
@@ -838,13 +839,13 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 			if (!block.previousBlock && block.height != 1) {
 				return setImmediate(done, "Invalid previous block");
 			}
-
+			//根据高度计算产生块的奖励
 			var expectedReward = privated.milestones.calcReward(block.height);
 
 			if (block.height != 1 && expectedReward !== block.reward) {
 				return setImmediate(done, "Invalid block reward");
 			}
-
+			//尝试查找本地blocks表，看是否已存在该blockId
 			library.dbLite.query("SELECT id FROM blocks WHERE id=$id", {id: block.id}, ['id'], function (err, rows) {
 				if (err) {
 					return done(err);
@@ -864,7 +865,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 				if (!valid) {
 					return done("Can't verify signature: " + block.id);
 				}
-
+				//高度相同，父块不同，产生分叉
 				if (block.previousBlock != privated.lastBlock.id) {
 					// Fork same height and different previous block
 					modules.delegates.fork(block, 1);
@@ -885,6 +886,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 				modules.delegates.validateBlockSlot(block, function (err) {
 					if (err) {
 						// Fork another delegate's slot
+						//受托人时段不同，产生分叉
 						modules.delegates.fork(block, 3);
 						return done("Can't verify slot: " + block.id);
 					}
@@ -908,7 +910,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 						}
 
 						transaction.blockId = block.id;
-
+						//再次检查所有交易
 						library.dbLite.query("SELECT id FROM trs WHERE id=$id", {id: transaction.id}, ['id'], function (err, rows) {
 								if (err) {
 									return cb(err);
@@ -918,6 +920,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 
 								if (tId) {
 									// Fork transactions already exist
+									//交易已经存在，则产生分叉
 									modules.delegates.fork(block, 2);
 									setImmediate(cb, "Transaction already exists: " + transaction.id);
 								} else {
@@ -984,7 +987,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 							errors.push("Invalid total fee: " + block.id);
 						}
 
-						if (errors.length > 0) {
+						if (errors.length > 0) {//交易验证出错又要回滚
 							async.eachSeries(block.transactions, function (transaction, cb) {
 								if (appliedTransactions[transaction.id]) {
 									modules.transactions.undoUnconfirmed(transaction, cb);
@@ -995,7 +998,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 								done(errors[0]);
 							});
 						} else {
-							try {
+							try {//无错则标准化该块
 								block = library.logic.block.objectNormalize(block);
 							} catch (e) {
 								return setImmediate(done, e);
@@ -1007,23 +1010,25 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 										library.logger.error("Failed to apply transactions: " + transaction.id);
 										process.exit(0);
 									}
+									//将交易写进数据库
 									modules.transactions.apply(transaction, block, sender, function (err) {
 										if (err) {
 											library.logger.error("Failed to apply transactions: " + transaction.id);
 											process.exit(0);
-										}
+										}//清空之前为了验证交易时临时保存的uncomfirmedtransactions
 										modules.transactions.removeUnconfirmedTransaction(transaction.id);
 										setImmediate(cb);
 									});
 								});
 							}, function (err) {
+								//保存块进blocks表
 								privated.saveBlock(block, function (err) {
 									if (err) {
 										library.logger.error("Failed to save block...");
 										library.logger.error(err);
 										process.exit(0);
 									}
-
+									//触发newblock消息并全网广播
 									library.bus.message('newBlock', block, broadcast);
 									privated.lastBlock = block;
 
@@ -1038,7 +1043,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 		});
 	}, cb);
 };
-
+//删除本地blocks表中比block.height高的块（blockId为参数）
 Blocks.prototype.simpleDeleteAfterBlock = function (blockId, cb) {
 	library.dbLite.query("DELETE FROM blocks WHERE height >= (SELECT height FROM blocks where id = $id)", {id: blockId}, cb);
 };
@@ -1049,9 +1054,11 @@ Blocks.prototype.loadBlocksFromPeer = function (peer, lastCommonBlockId, cb) {
 	var lastValidBlock = null;
 
 	async.whilst(
+		//条件函数
 		function () {
 			return !loaded && count < 30;
 		},
+		//主循环函数(30次)
 		function (next) {
 			count++;
 			modules.transport.getFromPeer(peer, {
@@ -1113,7 +1120,7 @@ Blocks.prototype.loadBlocksFromPeer = function (peer, lastCommonBlockId, cb) {
 		}
 	);
 };
-
+//删除本地blocks表中比block.height高的块（block为参数）
 Blocks.prototype.deleteBlocksBefore = function (block, cb) {
 	var blocks = [];
 
@@ -1143,7 +1150,7 @@ Blocks.prototype.generateBlock = function (keypair, timestamp, cb) {
 			if (err || !sender) {
 				return cb("Invalid sender");
 			}
-
+			//检查所有交易的内容是否完全
 			if (library.logic.transaction.ready(transaction, sender)) {
 				library.logic.transaction.verify(transaction, sender, function (err) {
 					ready.push(transaction);
@@ -1154,7 +1161,7 @@ Blocks.prototype.generateBlock = function (keypair, timestamp, cb) {
 			}
 		});
 	}, function () {
-		try {
+		try {//创建一个block
 			var block = library.logic.block.create({
 				keypair: keypair,
 				timestamp: timestamp,
@@ -1164,7 +1171,7 @@ Blocks.prototype.generateBlock = function (keypair, timestamp, cb) {
 		} catch (e) {
 			return setImmediate(cb, e);
 		}
-
+		//处理这个新block
 		self.processBlock(block, true, cb);
 	});
 };
