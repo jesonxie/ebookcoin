@@ -58,7 +58,7 @@ Transaction.prototype.create = function (data) {
 
 	return trs;
 }
-
+//由各个包含交易类型的模块调用，注册交易类型和处理函数
 Transaction.prototype.attachAssetType = function (typeId, instance) {
 	if (instance && typeof instance.create == 'function' && typeof instance.getBytes == 'function' &&
 		typeof instance.calculateFee == 'function' && typeof instance.verify == 'function' &&
@@ -72,7 +72,7 @@ Transaction.prototype.attachAssetType = function (typeId, instance) {
 		throw Error('Invalid instance interface');
 	}
 }
-
+//对交易进行签名
 Transaction.prototype.sign = function (keypair, trs) {
 	var hash = this.getHash(trs);
 	return ed.Sign(hash, keypair).toString('hex');
@@ -165,7 +165,7 @@ Transaction.prototype.getBytes = function (trs, skipSignature, skipSecondSignatu
 	}
 	return bb.toBuffer();
 }
-
+//检测这个交易所必需包含的信息是否完全包含
 Transaction.prototype.ready = function (trs, sender) {
 	if (!privated.types[trs.type]) {
 		throw Error('Unknown transaction type ' + trs.type);
@@ -174,10 +174,10 @@ Transaction.prototype.ready = function (trs, sender) {
 	if (!sender) {
 		return false;
 	}
-
+	//实际检测函数
 	return privated.types[trs.type].ready.call(this, trs, sender);
 }
-
+//处理交易内容
 Transaction.prototype.process = function (trs, sender, requester, cb) {
 	if (typeof requester === 'function') {
 		cb = requester;
@@ -226,12 +226,12 @@ Transaction.prototype.process = function (trs, sender, requester, cb) {
 		}
 	}
 
-
+	//前面是所有类型交易都要经历的验证，这个函数调用对应交易类型的处理函数进行验证
 	privated.types[trs.type].process.call(this, trs, sender, function (err, trs) {
 		if (err) {
 			return setImmediate(cb, err);
 		}
-
+		//检查该交易是否已经存在
 		this.scope.dbLite.query("SELECT count(id) FROM trs WHERE id=$id", {id: trs.id}, {"count": Number}, function (err, rows) {
 			if (err) {
 				return cb("Database error");
@@ -618,7 +618,7 @@ Transaction.prototype.dbSave = function (trs, cb) {
 	}.bind(this));
 
 }
-
+//将该交易标准化，由委托人写入区块时调用
 Transaction.prototype.objectNormalize = function (trs) {
 	if (!privated.types[trs.type]) {
 		throw Error('Unknown transaction type ' + trs.type);
