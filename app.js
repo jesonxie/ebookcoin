@@ -432,7 +432,7 @@ d.run(function () {
 		}],
 
 		ready: ['modules', 'bus', function (cb, scope) {
-			scope.bus.message("bind", scope.modules);
+			scope.bus.message("bind", scope.modules);//触发bind信号，各个模块的onbind监听函数开始执行
 			cb();
 		}]
 	}, function (err, scope) {
