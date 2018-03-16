@@ -29,6 +29,7 @@ privated.getAddressByPublicKey = function (publicKey) {
 }
 
 // Public methods
+//调用创建一个新区块
 Block.prototype.create = function (data) {
 	var transactions = data.transactions.sort(function compare(a, b) {
 		if (a.type < b.type) return -1;
@@ -87,13 +88,13 @@ Block.prototype.create = function (data) {
 
 	return block;
 }
-
+//生产该区块的人对该区块签名
 Block.prototype.sign = function (block, keypair) {
 	var hash = this.getHash(block);
 
 	return ed.Sign(hash, keypair).toString('hex');
 }
-
+//将block中的一些重要属性值的二进制数据拼接一起并返回供其他函数调用
 Block.prototype.getBytes = function (block) {
 	var size = 4 + 4 + 8 + 4 + 4 + 8 + 8 + 4 + 4 + 4 + 32 + 32 + 64;
 
@@ -146,7 +147,7 @@ Block.prototype.getBytes = function (block) {
 
 	return b;
 }
-
+//验证block的签名
 Block.prototype.verifySignature = function (block) {
 	var remove = 64;
 
@@ -167,7 +168,7 @@ Block.prototype.verifySignature = function (block) {
 
 	return res;
 }
-
+//保存block进本地blocks表
 Block.prototype.dbSave = function (block, cb) {
 	try {
 		var payloadHash = new Buffer(block.payloadHash, 'hex');
@@ -193,7 +194,7 @@ Block.prototype.dbSave = function (block, cb) {
 		blockSignature: blockSignature
 	}, cb);
 }
-
+//根据传入的block部分信息标准化并且标准化这个block包含的所有交易
 Block.prototype.objectNormalize = function (block) {
 	for (var i in block) {
 		if (block[i] == null || typeof block[i] === 'undefined') {
@@ -264,6 +265,7 @@ Block.prototype.objectNormalize = function (block) {
 
 	try {
 		for (var i = 0; i < block.transactions.length; i++) {
+			//实例化这个block包含的所有交易
 			block.transactions[i] = this.scope.transaction.objectNormalize(block.transactions[i]);
 		}
 	} catch (e) {
@@ -272,7 +274,7 @@ Block.prototype.objectNormalize = function (block) {
 
 	return block;
 }
-
+//根据新创建的block的内容信息计算出这个新block的blockId
 Block.prototype.getId = function (block) {
 	var hash = crypto.createHash('sha256').update(this.getBytes(block)).digest();
 	var temp = new Buffer(8);
@@ -283,7 +285,7 @@ Block.prototype.getId = function (block) {
 	var id = bignum.fromBuffer(temp).toString();
 	return id;
 }
-
+//根据block的内容信息计算HASH
 Block.prototype.getHash = function (block) {
 	return crypto.createHash('sha256').update(this.getBytes(block)).digest();
 }
@@ -291,7 +293,7 @@ Block.prototype.getHash = function (block) {
 Block.prototype.calculateFee = function (block) {
 	return 10000000;
 }
-
+//根据从blocks表读出的一个block数据做一些数值类型转换再返回该block的部分重要属性
 Block.prototype.dbRead = function (raw) {
 	if (!raw.b_id) {
 		return null
