@@ -46,7 +46,7 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: err.toString()});
 	});
 };
-
+//触发自动更新最新块
 privated.syncTrigger = function (turnOn) {
 	if (turnOn === false && privated.syncIntervalId) {
 		clearTimeout(privated.syncIntervalId);
@@ -350,7 +350,7 @@ privated.loadUnconfirmedTransactions = function (cb) {
 		}, cb);
 	});
 };
-
+//加载整个区块链
 privated.loadBlockChain = function () {
 	var offset = 0, limit = library.config.loading.loadPerIteration;
 	var verify = library.config.loading.verifyOnLoading;
@@ -405,7 +405,7 @@ privated.loadBlockChain = function () {
 			}
 		});
 	}
-
+	//再本地创建区块链所有的表
 	library.logic.account.createTables(function (err) {
 		if (err) {
 			throw err;
@@ -425,6 +425,7 @@ privated.loadBlockChain = function () {
 					library.logger.info('Blocks ' + count);
 
 					// Check if previous loading missed
+					//如果是新的客户端，本地的blocks表只有创世块，所以count=1
 					if (reject || verify || count == 1) {
 						load(count);
 					} else {
