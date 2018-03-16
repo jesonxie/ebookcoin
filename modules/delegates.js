@@ -268,6 +268,7 @@ function Delegates(cb, scope) {
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)
 privated.attachApi = function () {
 	var router = new Router();
 
