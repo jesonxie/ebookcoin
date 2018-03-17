@@ -30,8 +30,8 @@ function RoundChanges (round) {
   var roundRewards = (privated.rewardsByRound[round] || []);
 
   this.at = function (index) {
-    var fees = Math.floor(roundFees / constants.delegates),
-        feesRemaining = roundFees - (fees * constants.delegates),
+    var fees = Math.floor(roundFees / constants.delegates),//商
+        feesRemaining = roundFees - (fees * constants.delegates),//余数
         rewards = parseInt(roundRewards[index]) || 0;
 
     return {
@@ -48,6 +48,7 @@ Round.prototype.loaded = function () {
 };
 
 // Public methods
+//根据height计算处在第几round
 Round.prototype.calc = function (height) {
 	return Math.floor(height / constants.delegates) + (height % constants.delegates > 0 ? 1 : 0);
 };
@@ -60,7 +61,7 @@ Round.prototype.getVotes = function (round, cb) {
 		cb(err, rows);
 	});
 };
-
+//从mem_round表删除给定的round
 Round.prototype.flush = function (round, cb) {
 	library.dbLite.query("delete from mem_round where round = $round", {round: round}, cb);
 };
@@ -220,7 +221,7 @@ Round.prototype.backwardTick = function (block, previousBlock, cb) {
 		}
 	});
 };
-
+//更新本轮的相关数据
 Round.prototype.tick = function (block, cb) {
 	function done(err) {
 		cb && setImmediate(cb, err);
@@ -238,29 +239,32 @@ Round.prototype.tick = function (block, cb) {
 		var round = self.calc(block.height);
 
 		privated.feesByRound[round] = (privated.feesByRound[round] || 0);
-		privated.feesByRound[round] += block.totalFee;
+		privated.feesByRound[round] += block.totalFee;//更新这一轮的矿工费
 
 		privated.rewardsByRound[round] = (privated.rewardsByRound[round] || []);
-		privated.rewardsByRound[round].push(block.reward);
+		privated.rewardsByRound[round].push(block.reward);//添加生产block的奖励
 
 		privated.delegatesByRound[round] = privated.delegatesByRound[round] || [];
-		privated.delegatesByRound[round].push(block.generatorPublicKey);
+		privated.delegatesByRound[round].push(block.generatorPublicKey);//添加生产block的受委托的公钥
 
 		var nextRound = self.calc(block.height + 1);
-
+		//判断这一轮是否结束
 		if (round !== nextRound || block.height == 1) {
 			if (privated.delegatesByRound[round].length == constants.delegates || block.height == 1 || block.height == 101) {
-				var outsiders = [];
+				var outsiders = [];//记录新一轮不再担任受委托人的PublicKey
 
 				async.series([
 					function (cb) {
+						//如果不是继创世块之后的第一轮
 						if (block.height != 1) {
+							//产生新一轮的受委托人列表
 							modules.delegates.generateDelegateList(block.height, function (err, roundDelegates) {
 								if (err) {
 									return cb(err);
 								}
 								for (var i = 0; i < roundDelegates.length; i++) {
 									if (privated.delegatesByRound[round].indexOf(roundDelegates[i]) == -1) {
+										//记录新一轮不再担任受委托人的PublicKey
 										outsiders.push(modules.accounts.generateAddressByPublicKey(roundDelegates[i]));
 									}
 								}
@@ -282,11 +286,13 @@ Round.prototype.tick = function (block, cb) {
 						});
 					},
 					function (cb) {
+						//获得上一轮的投票结果
 						self.getVotes(round, function (err, votes) {
 							if (err) {
 								return cb(err);
 							}
 							async.eachSeries(votes, function (vote, cb) {
+								//更改账号表mem_accounts中各受委托人的获得投票数
 								library.dbLite.query('update mem_accounts set vote = vote + $amount where address = $address', {
 									address: modules.accounts.generateAddressByPublicKey(vote.delegate),
 									amount: vote.amount
@@ -299,11 +305,12 @@ Round.prototype.tick = function (block, cb) {
 						});
 					},
 					function (cb) {
+						//结算发放上各个受委托人的矿工费和产生区块的奖励
 						var roundChanges = new RoundChanges(round);
 
 						async.forEachOfSeries(privated.delegatesByRound[round], function (delegate, index, cb) {
 							var changes = roundChanges.at(index);
-
+							//将所得费用和奖励写入受委托人账户
 							modules.accounts.mergeAccountAndGet({
 								publicKey: delegate,
 								balance: changes.balance,
@@ -332,6 +339,7 @@ Round.prototype.tick = function (block, cb) {
 						}, cb);
 					},
 					function (cb) {
+						//再次获得上一轮投票结果
 						self.getVotes(round, function (err, votes) {
 							if (err) {
 								return cb(err);
@@ -342,6 +350,7 @@ Round.prototype.tick = function (block, cb) {
 									amount: vote.amount
 								}, cb);
 							}, function (err) {
+								//触发一轮结束的事件信号
 								library.bus.message('finishRound', round);
 								self.flush(round, function (err2) {
 									cb(err || err2);
