@@ -466,8 +466,9 @@ privated.getKeysSortByVote = function (cb) {
 		}));
 	});
 };
-
+//根据块高度获得块时段数据，为区块提供了密钥对和时间戳
 privated.getBlockSlotData = function (slot, height, cb) {
+	//获得可以生产区块的受托人列表，根据当前时段信息找到激活的受托人标识，继而找到对应的密钥对
 	self.generateDelegateList(height, function (err, activeDelegates) {
 		if (err) {
 			return cb(err);
@@ -499,7 +500,7 @@ privated.loop = function (cb) {
 		// library.logger.log('Loop', 'exit: syncing');
 		return setImmediate(cb);
 	}
-
+	//判断时间戳等是否正确
 	var currentSlot = slots.getSlotNumber();
 	var lastBlock = modules.blocks.getLastBlock();
 
@@ -507,7 +508,7 @@ privated.loop = function (cb) {
 		// library.logger.log('Loop', 'exit: lastBlock is in the same slot');
 		return setImmediate(cb);
 	}
-
+	//获得块时段数据，为区块提供了密钥对和时间戳
 	privated.getBlockSlotData(currentSlot, lastBlock.height + 1, function (err, currentBlockData) {
 		if (err || currentBlockData === null) {
 			library.logger.log('Loop', 'skiping slot');
@@ -516,6 +517,7 @@ privated.loop = function (cb) {
 
 		library.sequence.add(function (cb) {
 			if (slots.getSlotNumber(currentBlockData.time) == slots.getSlotNumber()) {
+				//产生新的块
 				modules.blocks.generateBlock(currentBlockData.keypair, currentBlockData.time, function (err) {
 					library.logger.log('Round ' + modules.round.calc(modules.blocks.getLastBlock().height) + ' new block id: ' + modules.blocks.getLastBlock().id + ' height: ' + modules.blocks.getLastBlock().height + ' slot: ' + slots.getSlotNumber(currentBlockData.time) + ' reward: ' + modules.blocks.getLastBlock().reward);
 					cb(err);
@@ -565,6 +567,7 @@ privated.loadMyDelegates = function (cb) {
 };
 
 // Public methods
+//可以生产区块的受托人列表
 Delegates.prototype.generateDelegateList = function (height, cb) {
 	privated.getKeysSortByVote(function (err, truncDelegateList) {
 		if (err) {
@@ -731,7 +734,7 @@ Delegates.prototype.sandboxApi = function (call, args, cb) {
 Delegates.prototype.onBind = function (scope) {
 	modules = scope;
 };
-
+//区块链加载并验证结束后触发此方法，可以开始产生新区块
 Delegates.prototype.onBlockchainReady = function () {
 	privated.loaded = true;
 
@@ -739,9 +742,9 @@ Delegates.prototype.onBlockchainReady = function () {
 		if (err) {
 			library.logger.error("Failed to load delegates", err);
 		}
-
+		//产生新区块入口
 		privated.loop(function () {
-			setTimeout(nextLoop, 1000);
+			setTimeout(nextLoop, 1000);//至少一秒后才能又进入loop函数，也即是产生新块
 		});
 
 	});
