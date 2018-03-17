@@ -17,7 +17,7 @@ function Transaction(scope, cb) {
 // private methods
 var privated = {};
 privated.types = {};
-
+//计算第几round
 function calc (height) {
 	return Math.floor(height / constants.delegates) + (height % constants.delegates > 0 ? 1 : 0);
 }
