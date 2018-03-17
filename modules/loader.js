@@ -86,12 +86,12 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 		library.logger.info("Found common block " + commonBlock.id + " (at " + commonBlock.height + ")" + " with peer " + peerStr);
 		var toRemove = lastBlock.height - commonBlock.height;
 
-		if (toRemove > 1010) {
+		if (toRemove > 1010) {//该节点的分支太长，限制从该节点同步数据（1小时）
 			library.logger.log("long fork, ban 60 min", peerStr);
 			modules.peer.state(peer.ip, peer.port, 0, 3600);
 			return cb();
 		}
-
+		//暂存未确认交易
 		var overTransactionList = [];
 		modules.transactions.undoUnconfirmedList(function (err, unconfirmedList) {
 			if (err) {
@@ -107,6 +107,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 			async.series([
 				function (cb) {
 					if (commonBlock.id != lastBlock.id) {
+					//从men_round表中删除lastblock所在的轮和删除round.js模块的全局变量中和该轮相关的数据(无un前缀)
 						modules.round.directionSwap('backward', lastBlock, cb);
 					} else {
 						cb();
@@ -114,11 +115,12 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 				},
 				function (cb) {
 					library.bus.message('deleteBlocksBefore', commonBlock);
-
+					//删除正常块到本地lastblock之间的块
 					modules.blocks.deleteBlocksBefore(commonBlock, cb);
 				},
 				function (cb) {
 					if (commonBlock.id != lastBlock.id) {
+					//从men_round表中删除lastblock所在的轮和删除round.js模块的全局变量中和该轮相关的数据(以un为前缀)
 						modules.round.directionSwap('forward', lastBlock, cb);
 					} else {
 						cb();
@@ -126,17 +128,17 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 				},
 				function (cb) {
 					library.logger.debug("Loading blocks from peer " + peerStr);
-					//从其他节点加载正常block之后所有的块
+					//从其他节点下载commonblock高度之后所有的块
 					modules.blocks.loadBlocksFromPeer(peer, commonBlock.id, function (err, lastValidBlock) {
 						if (err) {
 							modules.transactions.deleteHiddenTransaction();
 							library.logger.error(err);
 							library.logger.log("Failed to load blocks, ban 60 min", peerStr);
 							modules.peer.state(peer.ip, peer.port, 0, 3600);
-
+							//如果在这些下载下来的块中有正常有效的块
 							if (lastValidBlock) {
 								var uploaded = lastValidBlock.height - commonBlock.height;
-
+								//如果下载过来的最新有效块的高度比本地原来记录的lastBlock的高度大
 								if (toRemove < uploaded) {
 									library.logger.info("Remove blocks again until " + lastValidBlock.id + " (at " + lastValidBlock.height + ")");
 
@@ -148,7 +150,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 												cb();
 											}
 										},
-										function (cb) {
+										function (cb) {//删除正常块之后的所有块
 											modules.blocks.deleteBlocksBefore(lastValidBlock, function (err) {
 												async.series([
 													function (cb) {
@@ -158,6 +160,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 													},
 													function (cb) {
 														async.eachSeries(overTransactionList, function (trs, cb) {
+															//处理掉暂存未确认交易
 															modules.transactions.processUnconfirmedTransaction(trs, false, cb);
 														}, cb);
 													}
@@ -166,7 +169,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 										}
 									], cb);
 
-								} else {
+								} else {//如果下载过来的最新有效块的高度比本地原来记录的lastBlock的高度小
 									library.logger.info("Remove blocks again until common " + commonBlock.id + " (at " + commonBlock.height + ")");
 
 									async.series([
@@ -177,7 +180,7 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 												cb();
 											}
 										},
-										function (cb) {
+										function (cb) {//删除commonBlock之后的块，实际上是刚刚下载下来的所有块
 											modules.blocks.deleteBlocksBefore(commonBlock, cb);
 										},
 										function (cb) {
@@ -189,12 +192,13 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 										},
 										function (cb) {
 											async.eachSeries(overTransactionList, function (trs, cb) {
+												//处理掉暂存未确认交易
 												modules.transactions.processUnconfirmedTransaction(trs, false, cb);
 											}, cb);
 										}
 									], cb);
 								}
-							} else {
+							} else {//如果从其他节点下载下来的块中没有正常块，也要处理掉暂存未确认交易
 								async.eachSeries(overTransactionList, function (trs, cb) {
 									modules.transactions.processUnconfirmedTransaction(trs, false, cb);
 								}, cb);
@@ -222,8 +226,9 @@ privated.findUpdate = function (lastBlock, peer, cb) {
 		});
 	});
 };
-
+//同步其他节点的区块
 privated.loadBlocks = function (lastBlock, cb) {
+	//通过随机选择节点，并调用这里提供的api获得远程节点的“height”数据
 	modules.transport.getFromRandomPeer({
 		api: '/height',
 		method: 'GET'
@@ -252,13 +257,13 @@ privated.loadBlocks = function (lastBlock, cb) {
 			library.logger.log("Failed to parse blockchain height: " + peerStr + "\n" + library.scheme.getLastError());
 			return cb();
 		}
-
+		//在确保本地区块链高度小于远程节点区块链高度的前提下
 		if (bignum(modules.blocks.getLastBlock().height).lt(data.body.height)) { // Diff in chainbases
 			privated.blocksToSync = data.body.height;
-
+			//不然就调用“privated.findUpdate()”方法更新缺失的区块
 			if (lastBlock.id != privated.genesisBlock.block.id) { // Have to find common block
 				privated.findUpdate(lastBlock, data.peer, cb);
-			} else { // Have to load full db
+			} else { // Have to load full db,如果本地是创世区块就把远程节点整个数据库同步过来
 				privated.loadFullDb(data.peer, cb);
 			}
 		} else {
@@ -266,7 +271,7 @@ privated.loadBlocks = function (lastBlock, cb) {
 		}
 	});
 };
-
+//同步其他节点的签名
 privated.loadSignatures = function (cb) {
 	modules.transport.getFromRandomPeer({
 		api: '/signatures',
@@ -306,7 +311,7 @@ privated.loadSignatures = function (cb) {
 		});
 	});
 };
-
+//同步其他节点的未确认的交易
 privated.loadUnconfirmedTransactions = function (cb) {
 	modules.transport.getFromRandomPeer({
 		api: '/transactions',
@@ -350,7 +355,7 @@ privated.loadUnconfirmedTransactions = function (cb) {
 		}, cb);
 	});
 };
-//加载整个区块链
+//加载整个区块链(实际上是根据Blocks.loadBlocksFromPeer()下载好的blocks表生成本地区块链相关的表和数据，因为这个函数内部没有向其他节点请求数据的语句)
 privated.loadBlockChain = function () {
 	var offset = 0, limit = library.config.loading.loadPerIteration;
 	var verify = library.config.loading.verifyOnLoading;
@@ -491,13 +496,16 @@ Loader.prototype.sandboxApi = function (call, args, cb) {
 };
 
 // Events
+//在节点更新完毕后触发
 Loader.prototype.onPeerReady = function () {
 	setImmediate(function nextLoadBlock() {
 		if (!privated.loaded) return;
 		privated.isActive = true;
 		library.sequence.add(function (cb) {
+			//开启自动更新
 			privated.syncTrigger(true);
 			var lastBlock = modules.blocks.getLastBlock();
+			//同步其他节点的区块
 			privated.loadBlocks(lastBlock, cb);
 		}, function (err) {
 			err && library.logger.error('loadBlocks timer', err);
@@ -513,6 +521,7 @@ Loader.prototype.onPeerReady = function () {
 
 	setImmediate(function nextLoadUnconfirmedTransactions() {
 		if (!privated.loaded) return;
+		//同步其他节点未确认的交易
 		privated.loadUnconfirmedTransactions(function (err) {
 			err && library.logger.error('loadUnconfirmedTransactions timer', err);
 			setTimeout(nextLoadUnconfirmedTransactions, 14 * 1000);
@@ -522,6 +531,7 @@ Loader.prototype.onPeerReady = function () {
 
 	setImmediate(function nextLoadSignatures() {
 		if (!privated.loaded) return;
+		//同步其他节点的签名
 		privated.loadSignatures(function (err) {
 			err && library.logger.error('loadSignatures timer', err);
 
@@ -535,7 +545,7 @@ Loader.prototype.onBind = function (scope) {
 //加载本地区块链
 	privated.loadBlockChain();
 };
-
+//接收到区块链加载完毕的信号
 Loader.prototype.onBlockchainReady = function () {
 	privated.loaded = true;
 };
