@@ -291,7 +291,7 @@ privated.saveBlock = function (block, cb) {
 		});
 	});
 };
-
+//将blocks表的最后一个块弹出(删除)
 privated.popLastBlock = function (oldLastBlock, cb) {
 	library.balancesSequence.add(function (cb) {
 		self.loadBlocksPart({id: oldLastBlock.previousBlock}, function (err, previousBlock) {
@@ -301,7 +301,7 @@ privated.popLastBlock = function (oldLastBlock, cb) {
 			previousBlock = previousBlock[0];
 
 			async.eachSeries(oldLastBlock.transactions.reverse(), function (transaction, cb) {
-				async.series([
+				async.series([//回滚该块中所有的交易
 					function (cb) {
 						modules.accounts.getAccount({publicKey: transaction.senderPublicKey}, function (err, sender) {
 							if (err) {
@@ -311,13 +311,15 @@ privated.popLastBlock = function (oldLastBlock, cb) {
 						});
 					}, function (cb) {
 						modules.transactions.undoUnconfirmed(transaction, cb);
-					}, function (cb) {
+					}, function (cb) {//将这些交易放进隐藏交易数组
 						modules.transactions.pushHiddenTransaction(transaction);
 						setImmediate(cb);
 					}
 				], cb);
 			}, function (err) {
+				//反向修改本轮的各项内容
 				modules.round.backwardTick(oldLastBlock, previousBlock, function () {
+					//删除该块
 					privated.deleteBlock(oldLastBlock.id, function (err) {
 						if (err) {
 							return cb(err);
@@ -330,7 +332,7 @@ privated.popLastBlock = function (oldLastBlock, cb) {
 		});
 	}, cb);
 };
-//获取最新一轮的第一个模块的高度
+//获取height所在的round的第一个模块的高度和这一轮的所有block的id
 privated.getIdSequence = function (height, cb) {
 	library.dbLite.query("SELECT s.height, group_concat(s.id) from ( " +
 		'SELECT id, max(height) as height ' +
@@ -433,7 +435,9 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 					return next(err);
 				}
 				var max = lastBlockHeight;
+				//改变lastBlockHeight的值，下次循环getIdSequence查询block的范围就往前一round
 				lastBlockHeight = data.firstHeight;
+				//获得当前round中的commonblock，在一round中101位受委托人轮流产生block，有的产生的是分叉block，有的产生的是正常block
 				modules.transport.getFromPeer(peer, {
 					api: "/blocks/common?ids=" + data.ids + '&max=' + max + '&min=' + lastBlockHeight,//这里存疑，blocks模块没有common对应的api
 					method: "GET"
@@ -445,7 +449,7 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 					if (!data.body.common) {
 						return next();
 					}
-
+					//根据从peer得到的commonblock，再本地blocks表查询该block是否存在且信息一致
 					library.dbLite.query("select count(*) from blocks where id = $id " + (data.body.common.previousBlock ? "and previousBlock = $previousBlock" : "") + " and height = $height", {
 						"id": data.body.common.id,
 						"previousBlock": data.body.common.previousBlock,
@@ -453,11 +457,13 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 					}, {
 						"cnt": Number
 					}, function (err, rows) {
+						//如果没查到，则不认为它是commonblock，进入下一轮查询
 						if (err || !rows.length) {
 							return next(err || "Can't compare blocks");
 						}
 
 						if (rows[0].cnt) {
+							//如果有，则暂存
 							commonBlock = data.body.common;
 						}
 						next();
@@ -465,7 +471,7 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 				});
 			});
 		},
-		function (err) {
+		function (err) {//最后返回最后找到的commonblock
 			setImmediate(cb, err, commonBlock);
 		}
 	);
@@ -482,7 +488,7 @@ Blocks.prototype.count = function (cb) {
 		cb(null, res);
 	});
 };
-
+//查表取得区块的详细信息
 Blocks.prototype.loadBlocksData = function (filter, options, cb) {
 	if (arguments.length < 3) {
 		cb = options;
@@ -737,9 +743,9 @@ Blocks.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
 										}
 									], cb);
 								}, cb);
-							} else {
+							} else {//如果正常则更新privated.lastBlock
 								privated.lastBlock = block;
-
+								//更新本轮的相关数据
 								modules.round.tick(privated.lastBlock, cb);
 							}
 						});
@@ -932,7 +938,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 										if (err) {
 											return cb(err);
 										}
-
+										//一系列的交易验证过程
 										library.logic.transaction.verify(transaction, sender, function (err) {
 											if (err) {
 												return setImmediate(cb, err);
@@ -1031,7 +1037,7 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 									//触发newblock消息并全网广播
 									library.bus.message('newBlock', block, broadcast);
 									privated.lastBlock = block;
-
+									//更新本轮的数据
 									modules.round.tick(block, done);
 									// setImmediate(done);
 								});
@@ -1047,7 +1053,8 @@ Blocks.prototype.processBlock = function (block, broadcast, cb) {
 Blocks.prototype.simpleDeleteAfterBlock = function (blockId, cb) {
 	library.dbLite.query("DELETE FROM blocks WHERE height >= (SELECT height FROM blocks where id = $id)", {id: blockId}, cb);
 };
-
+//从其他节点下载lastCommonBlockId(可以是创世块ID，所以在软件初始化和节点更新后会调用此函数来下载整个区块链)之后的所有块
+//(包括该节点产生的可能出错的块和分叉块，所以需要后面用loadBlocksOffset()来验证这些块)
 Blocks.prototype.loadBlocksFromPeer = function (peer, lastCommonBlockId, cb) {
 	var loaded = false;
 	var count = 0;
@@ -1099,8 +1106,9 @@ Blocks.prototype.loadBlocksFromPeer = function (peer, lastCommonBlockId, cb) {
 							modules.peer.state(peer.ip, peer.port, 0, 3600);
 							return setImmediate(cb, e);
 						}
+						//处理块
 						self.processBlock(block, false, function (err) {
-							if (!err) {
+							if (!err) {//如果在处理的过程中没有出现错误，则认为该块正常和有效
 								lastCommonBlockId = block.id;
 								lastValidBlock = block;
 							} else {
@@ -1115,7 +1123,7 @@ Blocks.prototype.loadBlocksFromPeer = function (peer, lastCommonBlockId, cb) {
 				}
 			});
 		},
-		function (err) {
+		function (err) {//返回所下载的这些块中最新的有效正常块
 			setImmediate(cb, err, lastValidBlock);
 		}
 	);
@@ -1181,6 +1189,7 @@ Blocks.prototype.sandboxApi = function (call, args, cb) {
 };
 
 // Events
+
 Blocks.prototype.onReceiveBlock = function (block) {
 	if (modules.loader.syncing() || !privated.loaded) {
 		return;
@@ -1203,10 +1212,10 @@ Blocks.prototype.onReceiveBlock = function (block) {
 		}
 	});
 };
-
+//当app.js初始化后触发
 Blocks.prototype.onBind = function (scope) {
 	modules = scope;
-
+	//可以开始加载区块
 	privated.loaded = true;
 };
 
