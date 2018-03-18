@@ -425,16 +425,16 @@ Account.prototype.createTables = function (cb) {
 		table: "mem_round",
 		tableFields: [
 			{
-				"name": "address",
+				"name": "address",//投票人address
 				"type": "String",
 				"length": 21
 			},
 			{
-				"name": "amount",
+				"name": "amount",//投票数
 				"type": "BigInt"
 			},
 			{
-				"name": "delegate",
+				"name": "delegate",//受委托人的公钥
 				"type": "String",
 				"length": 64
 			},
