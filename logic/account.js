@@ -13,7 +13,7 @@ function Account(scope, cb) {
 	genesisBlock = this.scope.genesisblock.block;
 
 	this.table = "mem_accounts";
-
+	//men_account表所包含的全部列及其数字类型和长度限制
 	this.model = [
 		{
 			name: "username",
@@ -388,18 +388,18 @@ function Account(scope, cb) {
 			this.binary.push(field.name);
 		}
 	}.bind(this));
-
-	this.filter = {};
+	
+	this.filter = {};//保存men_account里所有的列的名字
 	this.model.forEach(function (field) {
 		this.filter[field.name] = field.filter;
 	}.bind(this));
 
-	this.conv = {};
+	this.conv = {};//保存men_account里所有的列的值的类型
 	this.model.forEach(function (field) {
 		this.conv[field.name] = field.conv;
 	}.bind(this));
 
-	this.editable = [];
+	this.editable = [];//保存men_account里所有能修改的列的名字
 	this.model.forEach(function (field) {
 		if (!field.constante && !field.readonly) {
 			this.editable.push(field.name);
@@ -408,7 +408,7 @@ function Account(scope, cb) {
 
 	setImmediate(cb, null, this);
 }
-
+//建立区块链项目所需要的所有的表，在软件初始化时调用
 Account.prototype.createTables = function (cb) {
 	var scope = this.scope;
 	var sqles = [];
@@ -628,7 +628,7 @@ Account.prototype.createTables = function (cb) {
 		setImmediate(cb, err, this);
 	}.bind(this));
 }
-
+//清空men_account表
 Account.prototype.removeTables = function (cb) {
 	var scope = this.scope;
 	var sqles = [];
@@ -683,8 +683,9 @@ Account.prototype.get = function (filter, fields, cb) {
 		cb(err, data && data.length ? data[0] : null)
 	})
 }
-
+//查men_account获取账号信息。filter为查询的条件语句的内容，fields为所要查询的列
 Account.prototype.getAll = function (filter, fields, cb) {
+	//如果传进来的fields是个函数，则查询所有的列，而且改变cb函数
 	if (typeof(fields) == 'function') {
 		cb = fields;
 		fields = this.fields.map(function (field) {
@@ -737,7 +738,7 @@ Account.prototype.getAll = function (filter, fields, cb) {
 		cb(null, data || []);
 	}.bind(this));
 }
-
+//对men_account表更新某个用户或者插入
 Account.prototype.set = function (address, fields, cb) {
 	var self = this;
 
@@ -775,7 +776,7 @@ Account.prototype.set = function (address, fields, cb) {
 		});
 	}, cb);
 }
-
+//当交易验证完毕后调用此函数来写入数据库，diff是与交易的内容
 Account.prototype.merge = function (address, diff, cb) {
 	var update = {}, remove = {}, insert = {}, insert_object = {}, remove_object = {}, round = [];
 
@@ -784,19 +785,21 @@ Account.prototype.merge = function (address, diff, cb) {
 	if (diff.publicKey !== undefined && !diff.publicKey){
 		console.log("!!!!!!!!!!!!!!!!!!!!!!!", address, diff)
 	}
-
+//this.editable保存men_account表中可以修改的列
 	this.editable.forEach(function (value) {
-		if (diff[value]) {
+		if (diff[value]) {//如果交易数据有要修改的某一列的内容
 			var trueValue = diff[value];
-			switch (self.conv[value]) {
-				case String:
+			switch (self.conv[value]) {//根据列的值的类型把要修改的内容放进不同的临时数组(不同数组构造不同的SQL语句)
+				case String://字符串类型放进update[]
 					update[value] = trueValue;
 					break;
-				case Number:
+				case Number://数字类型放进update[]，和字符串类型不一样的是这里仅仅对列数值加或减，字符串类型是替换整个字符串
 					if (Math.abs(trueValue) === trueValue && trueValue !== 0) {
-						update.$inc = update.$inc || {};
+						update.$inc = update.$inc || {};//$inc表示加
 						update.$inc[value] = trueValue;
+						//如果交易要修改banlance列(一般是send交易类型)，还要特别地修改men_round表
 						if (value == "balance") {
+							//先存进round[]
 							round.push({
 								query: "insert into mem_round (address, amount, delegate, blockId, round) select $address, $amount, dependentId, $blockId, $round from mem_accounts2delegates where accountId = $address",
 								values: {
@@ -809,7 +812,7 @@ Account.prototype.merge = function (address, diff, cb) {
 						}
 					}
 					else if (trueValue < 0) {
-						update.$dec = update.$dec || {};
+						update.$dec = update.$dec || {};//$dec表示减
 						update.$dec[value] = Math.abs(trueValue);
 						if (value == "balance") {
 							round.push({
@@ -824,7 +827,8 @@ Account.prototype.merge = function (address, diff, cb) {
 						}
 					}
 					break;
-				case Array:
+				case Array://列的值是数组类型
+					//如果键值对都是类
 					if (Object.prototype.toString.call(trueValue[0]) == "[object Object]") {
 						for (var i = 0; i < trueValue.length; i++) {
 							var val = trueValue[i];
@@ -842,12 +846,12 @@ Account.prototype.merge = function (address, diff, cb) {
 								insert_object[value].push(val)
 							}
 						}
-					} else {
+					} else {//如果键值对的值是数字
 						for (var i = 0; i < trueValue.length; i++) {
 							var math = trueValue[i][0];
 							var val = null;
 							if (math == "-") {
-								val = trueValue[i].slice(1);
+								val = trueValue[i].slice(1);//把运算符去掉，SQL语句没有'+''-'运算符
 								remove[value] = remove[value] || [];
 								remove[value].push(val);
 								if (value == "delegates") {
@@ -898,9 +902,11 @@ Account.prototype.merge = function (address, diff, cb) {
 			}
 		}
 	});
-
+	//临时存放SQL语句
 	var sqles = [];
-
+	//907--973的函数根据不同的数组如update{}, remove{}, insert{}的内容建立标准的SQL语句，self.table=this.table=men_account表
+	//men_account表的每一列如multisignatures都有和men_account表相关联的men_account2multisignatures
+	//所以在修改men_account表时也要修改这些列对应的表
 	if (Object.keys(remove).length) {
 		Object.keys(remove).forEach(function (el) {
 			var sql = jsonSql.build({
@@ -979,7 +985,7 @@ Account.prototype.merge = function (address, diff, cb) {
 			self.get({address: address}, cb);
 		}
 	}
-
+//逐个执行sqls[]里的SQL语句
 	async.series([
 		function (cb) {
 			if (sqles.length > 1) {
@@ -1008,18 +1014,18 @@ Account.prototype.merge = function (address, diff, cb) {
 				}
 			});
 		},
-		function (cb) {
+		function (cb) {//修改men_round表
 			if (round.length > 1) {
 				self.scope.dbLite.query('BEGIN TRANSACTION;');
 			}
-
+			//依次执行round[]里的SQL语句
 			async.eachSeries(round, function (sql, cb) {
 				self.scope.dbLite.query(sql.query, sql.values, function (err, data) {
 					cb(err, data);
 				});
 			}, function (err) {
 				if (err) {
-					if (round.length > 1) {
+					if (round.length > 1) {//出现错误要回滚
 						self.scope.dbLite.query('ROLLBACK;', function (rollbackErr) {
 							cb(rollbackErr || err);
 						});
