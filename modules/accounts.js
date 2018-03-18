@@ -13,7 +13,7 @@ var	sandboxHelper = require('../helpers/sandbox.js');
 
 // private fields
 var modules, library, self, privated = {}, shared = {};
-
+//定义vote类交易的各种处理函数
 function Vote() {
 	this.create = function (data, trs) {
 		trs.recipientId = data.sender.address;
@@ -357,6 +357,7 @@ function Accounts(cb, scope) {
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -443,7 +444,7 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: err.toString()});
 	});
 };
-
+//新建一个账号
 privated.openAccount = function (secret, cb) {
 	var hash = crypto.createHash('sha256').update(secret, 'utf8').digest();
 	var keypair = ed.MakeKeypair(hash);
@@ -452,6 +453,7 @@ privated.openAccount = function (secret, cb) {
 };
 
 // Public methods
+//通过用户PublicKey获得Address
 Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 	var publicKeyHash = crypto.createHash('sha256').update(publicKey, 'hex').digest();
 	var temp = new Buffer(8);
@@ -465,7 +467,7 @@ Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 	}
 	return address;
 };
-
+//查men_account表获取账号的具体数据
 Accounts.prototype.getAccount = function (filter, fields, cb) {
 	if (filter.publicKey) {
 		filter.address = self.generateAddressByPublicKey(filter.publicKey);
@@ -478,7 +480,7 @@ Accounts.prototype.getAccount = function (filter, fields, cb) {
 Accounts.prototype.getAccounts = function (filter, fields, cb) {
 	library.logic.account.getAll(filter, fields, cb);
 };
-
+//更新men_account表的某几个数据并获取更多详细数据
 Accounts.prototype.setAccountAndGet = function (data, cb) {
 	var address = data.address || null;
 	if (address === null) {
@@ -498,7 +500,7 @@ Accounts.prototype.setAccountAndGet = function (data, cb) {
 		library.logic.account.get({address: address}, cb);
 	});
 };
-
+//更新men_account表和以men_account2开头的表(如men_account2multisignature表)的数据并获取更多详细数据
 Accounts.prototype.mergeAccountAndGet = function (data, cb) {
 	var address = data.address || null;
 	if (address === null) {
@@ -519,6 +521,7 @@ Accounts.prototype.sandboxApi = function (call, args, cb) {
 };
 
 // Events
+//当app.js初始化后触发
 Accounts.prototype.onBind = function (scope) {
 	modules = scope;
 };
