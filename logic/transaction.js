@@ -16,13 +16,15 @@ function Transaction(scope, cb) {
 
 // private methods
 var privated = {};
+//保存各种交易类型及其对应的处理函数
 privated.types = {};
-//计算第几round
+//根据块高度计算第几round
 function calc (height) {
 	return Math.floor(height / constants.delegates) + (height % constants.delegates > 0 ? 1 : 0);
 }
 
 // Public methods
+//创建一个交易
 Transaction.prototype.create = function (data) {
 	if (!privated.types[data.type]) {
 		throw Error('Unknown transaction type ' + data.type);
@@ -36,7 +38,7 @@ Transaction.prototype.create = function (data) {
 		throw Error("Can't find keypair");
 	}
 
-	var trs = {
+	var trs = {//所有交易必须包含的字段
 		type: data.type,
 		amount: 0,
 		senderPublicKey: data.sender.publicKey,
@@ -44,16 +46,16 @@ Transaction.prototype.create = function (data) {
 		timestamp: slots.getTime(),
 		asset: {}
 	};
-
+	//再根据交易类型调用其创建函数，增加该类型交易特有的字段
 	trs = privated.types[trs.type].create.call(this, data, trs);
 	trs.signature = this.sign(data.keypair, trs);
 
 	if (data.sender.secondSignature && data.secondKeypair) {
 		trs.signSignature = this.sign(data.secondKeypair, trs);
 	}
-
+	//计算获得交易ID
 	trs.id = this.getId(trs);
-
+	//根据不同交易类型计算交易费用
 	trs.fee = privated.types[trs.type].calculateFee.call(this, trs, data.sender) || false;
 
 	return trs;
@@ -77,13 +79,13 @@ Transaction.prototype.sign = function (keypair, trs) {
 	var hash = this.getHash(trs);
 	return ed.Sign(hash, keypair).toString('hex');
 }
-
+//对交易多重签名，注意和上面的函数的区别。
 Transaction.prototype.multisign = function (keypair, trs) {
-	var bytes = this.getBytes(trs, true, true);
+	var bytes = this.getBytes(trs, true, true);//getHash(trs)虽然内部再调用getBytes(trs)，但没有两个true的参数。
 	var hash = crypto.createHash('sha256').update(bytes).digest();
 	return ed.Sign(hash, keypair).toString('hex');
 }
-
+//为新交易计算新交易ID
 Transaction.prototype.getId = function (trs) {
 	var hash = this.getHash(trs);
 	var temp = new Buffer(8);
@@ -98,7 +100,7 @@ Transaction.prototype.getId = function (trs) {
 Transaction.prototype.getHash = function (trs) {
 	return crypto.createHash('sha256').update(this.getBytes(trs)).digest();
 }
-
+//获得交易总的数据的二进制值
 Transaction.prototype.getBytes = function (trs, skipSignature, skipSecondSignature) {
 	if (!privated.types[trs.type]) {
 		throw Error('Unknown transaction type ' + trs.type);
@@ -144,7 +146,8 @@ Transaction.prototype.getBytes = function (trs, skipSignature, skipSecondSignatu
 				bb.writeByte(assetBytes[i]);
 			}
 		}
-
+		//多重签名时下面这两个判断生效，跳过sender的签名和第二签名数据是因为trs.asset.multisignatures.keysgroup[]
+		//里已经包含sender的publickey，不需要重复数据
 		if (!skipSignature && trs.signature) {
 			var signatureBuffer = new Buffer(trs.signature, 'hex');
 			for (var i = 0; i < signatureBuffer.length; i++) {
@@ -247,7 +250,7 @@ Transaction.prototype.process = function (trs, sender, requester, cb) {
 		});
 	}.bind(this));
 }
-
+//验证交易的内容
 Transaction.prototype.verify = function (trs, sender, requester, cb) { //inheritance
 	if (typeof requester === 'function') {
 		cb = requester;
@@ -381,7 +384,7 @@ Transaction.prototype.verify = function (trs, sender, requester, cb) { //inherit
 		cb(err);
 	});
 }
-
+//验证交易的签名
 Transaction.prototype.verifySignature = function (trs, publicKey, signature) {
 	if (!privated.types[trs.type]) {
 		throw Error('Unknown transaction type ' + trs.type);
@@ -398,7 +401,7 @@ Transaction.prototype.verifySignature = function (trs, publicKey, signature) {
 
 	return res;
 }
-
+//验证发起交易者的第二签名
 Transaction.prototype.verifySecondSignature = function (trs, publicKey, signature) {
 	if (!privated.types[trs.type]) {
 		throw Error('Unknown transaction type ' + trs.type);
@@ -415,7 +418,7 @@ Transaction.prototype.verifySecondSignature = function (trs, publicKey, signatur
 
 	return res;
 }
-
+//验证交易的总数据的二进制值
 Transaction.prototype.verifyBytes = function (bytes, publicKey, signature) {
 	try {
 		var data2 = new Buffer(bytes.length);
@@ -434,7 +437,7 @@ Transaction.prototype.verifyBytes = function (bytes, publicKey, signature) {
 
 	return res;
 }
-
+//在写进区块时调用，并更改数据库中主要是men_account表中没有un前缀的列的值
 Transaction.prototype.apply = function (trs, block, sender, cb) {
 	if (!privated.types[trs.type]) {
 		return setImmediate(cb, "Unknown transaction type " + trs.type);
@@ -458,7 +461,7 @@ Transaction.prototype.apply = function (trs, block, sender, cb) {
 		if (err) {
 			return cb(err);
 		}
-
+		
 		privated.types[trs.type].apply.call(this, trs, block, sender, function (err) {
 			if (err) {
 				this.scope.account.merge(sender.address, {
@@ -474,7 +477,7 @@ Transaction.prototype.apply = function (trs, block, sender, cb) {
 		}.bind(this));
 	}.bind(this));
 }
-
+//当区块验证出错要回滚交易是调用，与apply的作用相逆，同样修改数据库中主要是men_account表中没有un前缀的列
 Transaction.prototype.undo = function (trs, block, sender, cb) {
 	if (!privated.types[trs.type]) {
 		return setImmediate(cb, "Unknown transaction type " + trs.type);
@@ -506,7 +509,7 @@ Transaction.prototype.undo = function (trs, block, sender, cb) {
 		}.bind(this));
 	}.bind(this));
 }
-
+//在本地验证完交易后或再次由受委托人验证交易时调用，修改数据库中主要是men_account表中带有un前缀的列
 Transaction.prototype.applyUnconfirmed = function (trs, sender, requester, cb) {
 	if (typeof requester === 'function') {
 		cb = requester;
@@ -554,7 +557,7 @@ Transaction.prototype.applyUnconfirmed = function (trs, sender, requester, cb) {
 		}.bind(this));
 	}.bind(this));
 }
-
+//当区块验证出错要回滚交易时和再次由受委托人验证交易时调用，与applyconfirmed的作用相逆，同样修改数据库中主要是men_account表中带有un前缀的列
 Transaction.prototype.undoUnconfirmed = function (trs, sender, cb) {
 	if (!privated.types[trs.type]) {
 		return setImmediate(cb, "Unknown transaction type " + trs.type);
@@ -578,7 +581,7 @@ Transaction.prototype.undoUnconfirmed = function (trs, sender, cb) {
 		}.bind(this));
 	}.bind(this));
 }
-
+//将交易保存进trs表
 Transaction.prototype.dbSave = function (trs, cb) {
 	if (!privated.types[trs.type]) {
 		return cb("Unknown transaction type: " + trs.type);
@@ -705,7 +708,7 @@ Transaction.prototype.objectNormalize = function (trs) {
 
 	return trs;
 }
-
+//从数据库中读取交易的具体信息
 Transaction.prototype.dbRead = function (raw) {
 	if (!raw.t_id) {
 		return null
