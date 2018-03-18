@@ -647,7 +647,7 @@ Account.prototype.removeTables = function (cb) {
 		setImmediate(cb, err, this);
 	}.bind(this));
 }
-
+//标准化一个accoun所需的所有字段和数据
 Account.prototype.objectNormalize = function (account) {
 	var report = this.scope.scheme.validate(account, {
 		object: true,
@@ -776,7 +776,8 @@ Account.prototype.set = function (address, fields, cb) {
 		});
 	}, cb);
 }
-//当交易验证完毕后调用此函数来写入数据库，diff是与交易的内容
+//当交易验证完毕后调用此函数来写入数据库，更新men_account表和以men_account2开头的表(如men_account2multisignature表)的数据。
+//diff是与交易的内容
 Account.prototype.merge = function (address, diff, cb) {
 	var update = {}, remove = {}, insert = {}, insert_object = {}, remove_object = {}, round = [];
 
