@@ -24,7 +24,7 @@ function Round(cb, scope) {
 	setImmediate(cb, null, self);
 }
 
-// Round changes
+// Round changes，结算上一轮的旷工费和奖励
 function RoundChanges (round) {
   var roundFees = parseInt(privated.feesByRound[round]) || 0;
   var roundRewards = (privated.rewardsByRound[round] || []);
@@ -52,7 +52,7 @@ Round.prototype.loaded = function () {
 Round.prototype.calc = function (height) {
 	return Math.floor(height / constants.delegates) + (height % constants.delegates > 0 ? 1 : 0);
 };
-
+//从数据库中查询目前的投票数据
 Round.prototype.getVotes = function (round, cb) {
 	library.dbLite.query("select delegate, amount from ( " +
 		"select m.delegate, sum(m.amount) amount, m.round from mem_round m " +
