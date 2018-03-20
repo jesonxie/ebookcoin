@@ -19,7 +19,7 @@ var modules, library, self, privated = {}, shared = {};
 privated.loaded = false;
 
 privated.keypairs = {};
-
+//定义和delegate类型交易相关的处理函数
 function Delegate() {
 	this.create = function (data, trs) {
 		trs.recipientId = null;
@@ -33,7 +33,7 @@ function Delegate() {
 	};
 
 	this.calculateFee = function (trs, sender) {
-		return 100 * constants.fixedPoint;
+		return 100 * constants.fixedPoint;//fixedPoint=100000000
 	};
 
 	this.verify = function (trs, sender, cb) {
@@ -451,7 +451,7 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: err.toString()});
 	});
 };
-
+//从men_account表中查找出获得票数前101位的受委托人，返回他们的publickey
 privated.getKeysSortByVote = function (cb) {
 	modules.accounts.getAccounts({
 		isDelegate: 1,
@@ -466,15 +466,15 @@ privated.getKeysSortByVote = function (cb) {
 		}));
 	});
 };
-//根据块高度获得块时段数据，为区块提供了密钥对和时间戳
+//根据块高度获得块时段数据，为区块提供了生产该区块的受委托人的密钥对和时间戳
 privated.getBlockSlotData = function (slot, height, cb) {
-	//获得可以生产区块的受托人列表，根据当前时段信息找到激活的受托人标识，继而找到对应的密钥对
+	//根据当前块高度获得可以生产区块的受托人列表，找到激活的受托人标识，继而找到对应的密钥对
 	self.generateDelegateList(height, function (err, activeDelegates) {
 		if (err) {
 			return cb(err);
 		}
 		var currentSlot = slot;
-		var lastSlot = slots.getLastSlot(currentSlot);
+		var lastSlot = slots.getLastSlot(currentSlot);//获得currentslot所在轮round的最大的slot
 
 		for (; currentSlot < lastSlot; currentSlot += 1) {
 			var delegate_pos = currentSlot % constants.delegates;
@@ -489,7 +489,7 @@ privated.getBlockSlotData = function (slot, height, cb) {
 	});
 };
 
-//
+//产生区块的入口
 privated.loop = function (cb) {
 	if (!Object.keys(privated.keypairs).length) {
 		library.logger.debug('Loop', 'exit: no delegates');
@@ -534,17 +534,17 @@ privated.loop = function (cb) {
 		});
 	});
 };
-
+//只在初始化时调用，加载最初的101位受委托人
 privated.loadMyDelegates = function (cb) {
 	var secrets = null;
-	if (library.config.forging.secret) {
+	if (library.config.forging.secret) {//取出最初的101位受委托人的密码
 		secrets = util.isArray(library.config.forging.secret) ? library.config.forging.secret : [library.config.forging.secret];
 	}
 
 	async.eachSeries(secrets, function (secret, cb) {
 		var keypair = ed.MakeKeypair(crypto.createHash('sha256').update(secret, 'utf8').digest());
 
-		modules.accounts.getAccount({
+		modules.accounts.getAccount({//根据这些受委托人的密钥对获取账户信息
 			publicKey: keypair.publicKey.toString('hex')
 		}, function (err, account) {
 			if (err) {
@@ -567,7 +567,7 @@ privated.loadMyDelegates = function (cb) {
 };
 
 // Public methods
-//可以生产区块的受托人列表
+//根据区块高度得到该轮可以生产区块的受托人列表
 Delegates.prototype.generateDelegateList = function (height, cb) {
 	privated.getKeysSortByVote(function (err, truncDelegateList) {
 		if (err) {
@@ -585,15 +585,16 @@ Delegates.prototype.generateDelegateList = function (height, cb) {
 			}
 			currentSeed = crypto.createHash('sha256').update(currentSeed).digest();
 		}
-
+		//在该轮那个时间戳slot由哪个受委托人生产区块按照truncDelegateList数组的顺序定好
 		cb(null, truncDelegateList);
 	});
 
 };
-
+//验证用户投票（vote型交易），publickey为用户的公钥，votes包含投票给某一位受委托人(公钥)和取消对某一位受委托人(公钥)的投票
+//在投票交易写入区块时调用
 Delegates.prototype.checkDelegates = function (publicKey, votes, cb) {
 	if (util.isArray(votes)) {
-		modules.accounts.getAccount({publicKey: publicKey}, function (err, account) {
+		modules.accounts.getAccount({publicKey: publicKey}, function (err, account) {//先验证投票者用户是否存在
 			if (err) {
 				return cb(err);
 			}
@@ -601,7 +602,7 @@ Delegates.prototype.checkDelegates = function (publicKey, votes, cb) {
 				return cb("Account not found");
 			}
 
-			async.eachSeries(votes, function (action, cb) {
+			async.eachSeries(votes, function (action, cb) {//对votes里每一个投票和取消投票验证
 				var math = action[0];
 
 				if (math !== '+' && math !== '-') {
@@ -615,14 +616,14 @@ Delegates.prototype.checkDelegates = function (publicKey, votes, cb) {
 				} catch (e) {
 					return cb("Invalid public key");
 				}
-
+				//account.delegates里包含该用户对哪些受委托人投票了
 				if (math == "+" && (account.delegates !== null && account.delegates.indexOf(publicKey) != -1)) {
 					return cb("Failed to add vote, account has already voted for this delegate");
 				}
 				if (math == "-" && (account.delegates === null || account.delegates.indexOf(publicKey) === -1)) {
 					return cb("Failed to remove vote, account has not voted for this delegate");
 				}
-
+				//检查受委托人账户是否存在
 				modules.accounts.getAccount({publicKey: publicKey, isDelegate: 1}, function (err, account) {
 					if (err) {
 						return cb(err);
@@ -640,10 +641,11 @@ Delegates.prototype.checkDelegates = function (publicKey, votes, cb) {
 		setImmediate(cb, "Please provide an array of votes");
 	}
 };
-
+//和checkDelegates函数的功能一样，区别在于这里检查的事men_account表的带有u_前缀的列：u_deligates,前者检查deligates列
+//在处理投票交易(processtraction)时调用
 Delegates.prototype.checkUnconfirmedDelegates = function (publicKey, votes, cb) {
 	if (util.isArray(votes)) {
-		modules.accounts.getAccount({publicKey: publicKey}, function (err, account) {
+		modules.accounts.getAccount({publicKey: publicKey}, function (err, account) {//先验证投票者用户是否存在
 			if (err) {
 				return cb(err);
 			}
@@ -651,7 +653,7 @@ Delegates.prototype.checkUnconfirmedDelegates = function (publicKey, votes, cb) 
 				return cb("Account not found");
 			}
 
-			async.eachSeries(votes, function (action, cb) {
+			async.eachSeries(votes, function (action, cb) {//对votes里每一个投票和取消投票验证
 				var math = action[0];
 
 				if (math !== '+' && math !== '-') {
@@ -666,14 +668,14 @@ Delegates.prototype.checkUnconfirmedDelegates = function (publicKey, votes, cb) 
 				} catch (e) {
 					return cb("Invalid public key");
 				}
-
+				//account.u_delegates里包含该用户对哪些受委托人投票了
 				if (math == "+" && (account.u_delegates !== null && account.u_delegates.indexOf(publicKey) != -1)) {
 					return cb("Failed to add vote, account has already voted for this delegate");
 				}
 				if (math == "-" && (account.u_delegates === null || account.u_delegates.indexOf(publicKey) === -1)) {
 					return cb("Failed to remove vote, account has not voted for this delegate");
 				}
-
+				//检查受委托人账户是否存在
 				modules.accounts.getAccount({publicKey: publicKey, isDelegate: 1}, function (err, account) {
 					if (err) {
 						return cb(err);
@@ -691,13 +693,14 @@ Delegates.prototype.checkUnconfirmedDelegates = function (publicKey, votes, cb) 
 		return setImmediate(cb, "Please provide an array of votes");
 	}
 };
-
+//产生分叉块，cause是产生的原因，有四种。在处理新块,加载区块链后本地验证区块和从其他节点更新区块时调用（processBlock()）
 Delegates.prototype.fork = function (block, cause) {
 	library.logger.info('Fork', {
 		delegate: block.generatorPublicKey,
 		block: {id: block.id, timestamp: block.timestamp, height: block.height, previousBlock: block.previousBlock},
 		cause: cause
 	});
+	//将分叉块存入fork_stat表
 	library.dbLite.query("INSERT INTO forks_stat (delegatePublicKey, blockTimestamp, blockId, blockHeight, previousBlock, cause) " +
 		"VALUES ($delegatePublicKey, $blockTimestamp, $blockId, $blockHeight, $previousBlock, $cause);", {
 		delegatePublicKey: block.generatorPublicKey,
@@ -708,7 +711,7 @@ Delegates.prototype.fork = function (block, cause) {
 		cause: cause
 	});
 };
-
+//验证块时间戳slot对应的产出区块的受委托人和实际的块生产者是否一致
 Delegates.prototype.validateBlockSlot = function (block, cb) {
 	self.generateDelegateList(block.height, function (err, activeDelegates) {
 		if (err) {
@@ -731,6 +734,7 @@ Delegates.prototype.sandboxApi = function (call, args, cb) {
 };
 
 // Events
+//在app.js初始化后出发bind事件，这里监听到bind事件就执行
 Delegates.prototype.onBind = function (scope) {
 	modules = scope;
 };
