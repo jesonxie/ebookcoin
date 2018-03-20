@@ -137,6 +137,7 @@ function Transactions(cb, scope) {
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -157,14 +158,14 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: "API endpoint not found"});
 	});
 
-	library.network.app.use('/api/transactions', router);
+	library.network.app.use('/api/transactions', router);//设定父路径
 	library.network.app.use(function (err, req, res, next) {
 		if (!err) return next();
 		library.logger.error(req.url, err.toString());
 		res.status(500).send({success: false, error: err.toString()});
 	});
 }
-//取得某个交易的具体信息
+//查找数据库trs表满足参数filter里的条件的所有transaction
 privated.list = function (filter, cb) {
 	var sortFields = ['t.id', 't.blockId', 't.amount', 't.fee', 't.type', 't.timestamp', 't.senderPublicKey', 't.senderId', 't.recipientId', 't.senderUsername', 't.recipientUsername', 't.confirmations', 'b.height'];
 	var params = {}, fields_or = [], owner = "";
@@ -228,7 +229,7 @@ privated.list = function (filter, cb) {
 	if (filter.limit > 100) {
 		return cb("Invalid limit. Maximum is 100");
 	}
-
+	//找到共有多少个满足条件的交易
 	library.dbLite.query("select count(t.id) " +
 		"from trs t " +
 		"inner join blocks b on t.blockId = b.id " +
@@ -265,7 +266,7 @@ privated.list = function (filter, cb) {
 		});
 	});
 }
-
+//根据transactionId取交易
 privated.getById = function (id, cb) {
 	library.dbLite.query("select t.id, b.height, t.blockId, t.type, t.timestamp, lower(hex(t.senderPublicKey)), t.senderId, t.recipientId, t.senderUsername, t.recipientUsername, t.amount, t.fee, lower(hex(t.signature)), lower(hex(t.signSignature)), (select max(height) + 1 from blocks) - b.height " +
 		"from trs t " +
@@ -279,7 +280,7 @@ privated.getById = function (id, cb) {
 		cb(null, transacton);
 	});
 }
-
+//将一个UnconfirmedTransaction添加进本模块的unconfirmedTransactions数组和unconfirmedTransactionsIdIndex数组
 privated.addUnconfirmedTransaction = function (transaction, sender, cb) {
 	self.applyUnconfirmed(transaction, sender, function (err) {
 		if (err) {
@@ -296,11 +297,12 @@ privated.addUnconfirmedTransaction = function (transaction, sender, cb) {
 }
 
 // Public methods
+//根据TransactionsId获得交易信息
 Transactions.prototype.getUnconfirmedTransaction = function (id) {
 	var index = privated.unconfirmedTransactionsIdIndex[id];
 	return privated.unconfirmedTransactions[index];
 }
-
+//将一个DoubleSpendingTransactions添加进本模块的DoubleSpendingTransactions数组
 Transactions.prototype.addDoubleSpending = function (transaction) {
 	privated.doubleSpendingTransactions[transaction.id] = transaction;
 }
@@ -340,7 +342,7 @@ Transactions.prototype.processUnconfirmedTransaction = function (transaction, br
 			if (err) {
 				return cb(err);
 			}
-			
+			//将交易添加进本模块的unconfirmedTransactions数组和unconfirmedTransactionsIdIndex数组
 			privated.addUnconfirmedTransaction(transaction, sender, function (err) {
 				if (err) {
 					return cb(err);
@@ -355,17 +357,17 @@ Transactions.prototype.processUnconfirmedTransaction = function (transaction, br
 		if (err) {
 			return done(err);
 		}
-
+		//如果交易的发起者sender是多重签名用户
 		if (transaction.requesterPublicKey && sender && sender.multisignatures && sender.multisignatures.length) {
 			modules.accounts.getAccount({publicKey: transaction.requesterPublicKey}, function (err, requester) {
-				if (err) {
+				if (err) {//验证请求者requester用户是否存在
 					return done(err);
 				}
 
 				if (!requester) {
 					return cb("Invalid requester");
 				}
-
+				//进一步处理交易
 				library.logic.transaction.process(transaction, sender, requester, function (err, transaction) {
 					if (err) {
 						return done(err);
@@ -379,7 +381,7 @@ Transactions.prototype.processUnconfirmedTransaction = function (transaction, br
 					library.logic.transaction.verify(transaction, sender, done);
 				});
 			});
-		} else {
+		} else {//如果仅仅是普通用户，
 			library.logic.transaction.process(transaction, sender, function (err, transaction) {
 				if (err) {
 					return done(err);
@@ -468,7 +470,7 @@ Transactions.prototype.undoUnconfirmed = function (transaction, cb) {
 		library.logic.transaction.undoUnconfirmed(transaction, sender, cb);
 	});
 }
-//接收新产生的交易并对交易进行处理
+//接收新产生的交易并对交易进行处理，当接收到其他节点post过来一笔交易时被调用
 Transactions.prototype.receiveTransactions = function (transactions, cb) {
 	async.eachSeries(transactions, function (transaction, cb) {
 		self.processUnconfirmedTransaction(transaction, true, cb);
