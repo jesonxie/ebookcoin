@@ -146,7 +146,7 @@ privated.deleteBlock = function (blockId, cb) {
 		cb(err, res);
 	});
 };
-
+//查找数据库blocks表满足参数filter里的条件的所有block
 privated.list = function (filter, cb) {
 	var sortFields = ['b.id', 'b.timestamp', 'b.height', 'b.previousBlock', 'b.totalAmount', 'b.totalFee', 'b.reward', 'b.numberOfTransactions', 'b.generatorPublicKey'];
 	var params = {}, fields = [], sortMethod = '', sortBy = '';
@@ -217,7 +217,7 @@ privated.list = function (filter, cb) {
 	if (filter.limit > 100) {
 		return cb("Invalid limit. Maximum is 100");
 	}
-
+	//找到共有多少个满足条件的块
 	library.dbLite.query("select count(b.id) " +
 		"from blocks b " +
 		(fields.length ? "where " + fields.join(' and ') : ''), params, {count: Number}, function (err, rows) {
@@ -226,7 +226,7 @@ privated.list = function (filter, cb) {
 		}
 
 		var count = rows[0].count;
-
+		
 		library.dbLite.query("select b.id, b.version, b.timestamp, b.height, b.previousBlock, b.numberOfTransactions, b.totalAmount, b.totalFee, b.reward, b.payloadLength, lower(hex(b.payloadHash)), lower(hex(b.generatorPublicKey)), lower(hex(b.blockSignature)), (select max(height) + 1 from blocks) - b.height " +
 			"from blocks b " +
 			(fields.length ? "where " + fields.join(' and ') : '') + " " +
