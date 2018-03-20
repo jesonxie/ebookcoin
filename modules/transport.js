@@ -181,7 +181,7 @@ privated.attachApi = function () {
 			});
 		});
 	});
-	//注意和blocks.js里定义的api的区别，前者的路径是/api/blocks,调用blocks.shared.getBlocks(),这里的路径是/blocks
+	//注意和blocks.js里定义的api的区别，前者的路径是/api/blocks,调用blocks.shared.getBlocks(),这里的路径是/peer/blocks
 	//获得比给定的(req.query.lastBlockId)高度大的块，限制查询长度是1440
 	router.get("/blocks", function (req, res) {
 		res.set(privated.headers);
@@ -210,7 +210,7 @@ privated.attachApi = function () {
 			});
 		});
 	});
-	//向peer提交一个块
+	//接受peer提交一个块
 	router.post("/blocks", function (req, res) {
 		res.set(privated.headers);
 
@@ -246,7 +246,7 @@ privated.attachApi = function () {
 
 		res.sendStatus(200);
 	});
-
+	//接受peer提交一个签名
 	router.post('/signatures', function (req, res) {
 		res.set(privated.headers);
 
@@ -282,7 +282,7 @@ privated.attachApi = function () {
 			});
 		});
 	});
-
+	//返回本节点的所有UnconfirmedTransaction的签名给请求者
 	router.get('/signatures', function (req, res) {
 		res.set(privated.headers);
 
@@ -302,13 +302,13 @@ privated.attachApi = function () {
 			return res.status(200).json({success: true, signatures: signatures});
 		});
 	});
-
+	//返回本节点的所有UnconfirmedTransaction给请求者
 	router.get("/transactions", function (req, res) {
 		res.set(privated.headers);
 		// Need to process headers from peer
 		res.status(200).json({transactions: modules.transactions.getUnconfirmedTransactionList()});
 	});
-
+	//接受其他节点提交的交易信息
 	router.post("/transactions", function (req, res) {
 		res.set(privated.headers);
 
@@ -324,7 +324,7 @@ privated.attachApi = function () {
 			required: ['port']
 		});
 		var transaction;
-		try {
+		try {//标准化交易的各个字段的内容
 			transaction = library.logic.transaction.objectNormalize(req.body.transaction);
 		} catch (e) {
 			var peerIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -338,7 +338,7 @@ privated.attachApi = function () {
 			return res.status(200).json({success: false, message: "Invalid transaction body"});
 		}
 
-		library.balancesSequence.add(function (cb) {
+		library.balancesSequence.add(function (cb) {//处理该交易
 			modules.transactions.receiveTransactions([transaction], cb);
 		}, function (err) {
 			if (err) {
@@ -348,14 +348,14 @@ privated.attachApi = function () {
 			}
 		});
 	});
-
+	//返回本地blocks.privated.LastBlock的高度
 	router.get('/height', function (req, res) {
 		res.set(privated.headers);
 		res.status(200).json({
 			height: modules.blocks.getLastBlock().height
 		});
 	});
-
+	
 	router.post("/dapp/message", function (req, res) {
 		res.set(privated.headers);
 
@@ -435,7 +435,7 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: "API endpoint not found"});
 	});
 
-	library.network.app.use('/peer', router);
+	library.network.app.use('/peer', router);//设定父路径
 
 	library.network.app.use(function (err, req, res, next) {
 		if (!err) return next();
