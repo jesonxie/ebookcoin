@@ -28,6 +28,7 @@ function Transport(cb, scope) {
 }
 
 // private methods
+//定义各种和P2P网络相关的api和处理函数
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -39,7 +40,7 @@ privated.attachApi = function () {
 	router.use(function (req, res, next) {
 		var peerIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
-		if (peerIp == "127.0.0.1") {
+		if (peerIp == "127.0.0.1") {//如果访问者是本机，则直接跳到下一个处理函数，如果不是则执行下面的语句
 			return next();
 		}
 
@@ -50,7 +51,7 @@ privated.attachApi = function () {
 		req.headers.port = parseInt(req.headers.port);
 		req.headers['share-port'] = parseInt(req.headers['share-port']);
 
-		req.sanitize(req.headers, {
+		req.sanitize(req.headers, {//验证请求头信息
 			type: "object",
 			properties: {
 				port: {
@@ -77,7 +78,7 @@ privated.attachApi = function () {
 			if (err) return next(err);
 			if (!report.isValid) return res.status(500).send({status: false, error: report.issues});
 
-			var peer = {
+			var peer = {//根据请求头得到该节点的具体信息
 				ip: ip.toLong(peerIp),
 				port: headers.port,
 				state: 2,
@@ -91,25 +92,25 @@ privated.attachApi = function () {
 			}
 
 			if (peer.port > 0 && peer.port <= 65535 && peer.version == library.config.version) {
-				modules.peer.update(peer);
+				modules.peer.update(peer);//更新节点表
 			}
 
 			next();
 		});
 
 	});
-
+	//给请求者返回最多100个节点信息
 	router.get('/list', function (req, res) {
 		res.set(privated.headers);
 		modules.peer.list({limit: 100}, function (err, peers) {
 			return res.status(200).json({peers: !err ? peers : []});
 		});
 	});
-
+	//给请求者返回其给定的blockId范围内的一个正常block
 	router.get("/blocks/common", function (req, res, next) {
 		res.set(privated.headers);
 
-		req.sanitize(req.query, {
+		req.sanitize(req.query, {//验证请求体req.query是否包含必要的信息
 			type: "object",
 			properties: {
 				max: {
@@ -124,7 +125,7 @@ privated.attachApi = function () {
 				}
 			},
 			required: ['max', 'min', 'ids']
-		}, function (err, report, query) {
+		}, function (err, report, query) {//验证通过则将req.query赋给query，report是验证结果即isValid是否为TRUE
 			if (err) return next(err);
 			if (!report.isValid) return res.json({success: false, error: report.issue});
 
@@ -138,8 +139,8 @@ privated.attachApi = function () {
 				return "'" + id + "'";
 			});
 
-			if (!escapedIds.length) {
-				report = library.scheme.validate(req.headers, {
+			if (!escapedIds.length) {//如果escapedIds为空，即请求的内容没有包含ids(请求者想要从ids数组中找一个正常id)
+				report = library.scheme.validate(req.headers, {//验证请求者的请求头信息
 					type: "object",
 					properties: {
 						port: {
@@ -158,10 +159,10 @@ privated.attachApi = function () {
 				if (report) {
 					modules.peer.state(ip.toLong(peerIp), RequestSanitizer.int(req.headers.port), 0, 3600);
 				}
-
+				//返回请求错误
 				return res.json({success: false, error: "Invalid block id sequence"});
 			}
-
+			//如果escapedIds不为空，则根据请求的blockID范围查找本地blocks表，返回高度最高的块。
 			library.dbLite.query("select max(height), id, previousBlock, timestamp from blocks where id in (" + escapedIds.join(',') + ") and height >= $min and height <= $max", {
 				"max": max,
 				"min": min
@@ -174,17 +175,18 @@ privated.attachApi = function () {
 				if (err) {
 					return res.json({success: false, error: "Database error"});
 				}
-
+				//本节点将blocks表里的block都认为是正常的，所以只将查找结果的高度最高得块返回给请求者，而没有其他的验证
 				var commonBlock = rows.length ? rows[0] : null;
 				return res.json({success: true, common: commonBlock});
 			});
 		});
 	});
-
+	//注意和blocks.js里定义的api的区别，前者的路径是/api/blocks,调用blocks.shared.getBlocks(),这里的路径是/blocks
+	//获得比给定的(req.query.lastBlockId)高度大的块，限制查询长度是1440
 	router.get("/blocks", function (req, res) {
 		res.set(privated.headers);
 
-		req.sanitize(req.query, {
+		req.sanitize(req.query, {//验证请求体内容
 			type: 'object',
 			properties: {lastBlockId: {type: 'string'}}
 		}, function (err, report, query) {
@@ -202,13 +204,13 @@ privated.attachApi = function () {
 				if (err) {
 					return res.json({blocks: ""});
 				}
-
+			//返回查到的块给请求者
 				res.json({blocks: data});
 
 			});
 		});
 	});
-
+	//向peer提交一个块
 	router.post("/blocks", function (req, res) {
 		res.set(privated.headers);
 
@@ -226,7 +228,7 @@ privated.attachApi = function () {
 
 		var block;
 
-		try {
+		try {//标准化所提交的块
 			block = library.logic.block.objectNormalize(req.body.block);
 		} catch (e) {
 			var peerIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -239,7 +241,7 @@ privated.attachApi = function () {
 
 			return res.sendStatus(200);
 		}
-
+		//触发receiveBlock事件
 		library.bus.message('receiveBlock', block);
 
 		res.sendStatus(200);
