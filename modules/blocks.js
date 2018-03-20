@@ -93,7 +93,7 @@ privated.attachApi = function () {
 	var router = new Router();
 
 	router.use(function (req, res, next) {
-		if (modules) return next();
+		if (modules) return next();//如果blocks.js所依赖的模块还没有加载好，则modules=0，就不能执行return next()，而是发送500错误
 		res.status(500).send({success: false, error: "Blockchain is loading"});
 	});
 
@@ -439,7 +439,7 @@ Blocks.prototype.getCommonBlock = function (peer, height, cb) {
 				lastBlockHeight = data.firstHeight;
 				//获得当前round中的commonblock，在一round中101位受委托人轮流产生block，有的产生的是分叉block，有的产生的是正常block
 				modules.transport.getFromPeer(peer, {
-					api: "/blocks/common?ids=" + data.ids + '&max=' + max + '&min=' + lastBlockHeight,//这里存疑，blocks模块没有common对应的api
+					api: "/blocks/common?ids=" + data.ids + '&max=' + max + '&min=' + lastBlockHeight,//这个api接口的定义不在blocks.js中，而在transport.js中
 					method: "GET"
 				}, function (err, data) {
 					if (err || data.body.error) {
@@ -488,7 +488,7 @@ Blocks.prototype.count = function (cb) {
 		cb(null, res);
 	});
 };
-//查表取得区块的详细信息
+//查表取得比filter参数给定的lastId块的高度大的块，限制查询长度是filter.limit
 Blocks.prototype.loadBlocksData = function (filter, options, cb) {
 	if (arguments.length < 3) {
 		cb = options;
@@ -517,7 +517,7 @@ Blocks.prototype.loadBlocksData = function (filter, options, cb) {
 
 	library.dbSequence.add(function (cb) {
 		// "FROM (select * from blocks " + (filter.id ? " where id = $id " : "") + (filter.lastId ? " where height > (SELECT height FROM blocks where id = $lastId) " : "") + " limit $limit) as b " +
-
+		//先查出filter里指定的块lastId的高度
 		library.dbLite.query("SELECT height FROM blocks where id = $lastId", {
 			lastId: filter.lastId || null
 		}, {'height': Number}, function (err, rows) {
@@ -537,7 +537,7 @@ Blocks.prototype.loadBlocksData = function (filter, options, cb) {
 			if (!filter.id && !filter.lastId) {
 				limitPart = "where b.height < $limit ";
 			}
-
+			//查出filter.lastId之后的块，限制加载高度是filter.lastId块的高度加上filter.limit
 			library.dbLite[method]("SELECT " +
 				"b.id, b.version, b.timestamp, b.height, b.previousBlock, b.numberOfTransactions, b.totalAmount, b.totalFee, b.reward, b.payloadLength, lower(hex(b.payloadHash)), lower(hex(b.generatorPublicKey)), lower(hex(b.blockSignature)), " +
 				"t.id, t.type, t.timestamp, lower(hex(t.senderPublicKey)), t.senderId, t.recipientId, t.senderUsername, t.recipientUsername, t.amount, t.fee, lower(hex(t.signature)), lower(hex(t.signSignature)), " +
