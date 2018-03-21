@@ -23,6 +23,7 @@ function Peer(cb, scope) {
 }
 
 // private methods
+//绑定这个模块提供的api接口和处理函数(share.xx)，注意和transport.js模块的api接口路径的区别，后者为/peer/xx,这里是/api/peers/xx
 privated.attachApi = function () {
 	var router = new Router();
 
@@ -41,15 +42,16 @@ privated.attachApi = function () {
 		res.status(500).send({success: false, error: "API endpoint not found"});
 	});
 
-	library.network.app.use('/api/peers', router);
+	library.network.app.use('/api/peers', router);//定义父路径
 	library.network.app.use(function (err, req, res, next) {
 		if (!err) return next();
 		library.logger.error(req.url, err.toString());
 		res.status(500).send({success: false, error: err.toString()});
 	});
 };
-
+//通过访问其他节点获取节点列表来更新本地节点表
 privated.updatePeerList = function (cb) {
+	//在本地节点表随机找一个节点，然后访问该节点的api:/peer/list,获取其节点列表
 	modules.transport.getFromRandomPeer({
 		api: '/list',
 		method: 'GET'
@@ -57,8 +59,9 @@ privated.updatePeerList = function (cb) {
 		if (err) {
 			return cb();
 		}
-
+		
 		var report = library.scheme.validate(data.body.peers, {type: "array", required: true, uniqueItems: true});
+		//先验证返回的列表数据是否包含某些必要字段
 		library.scheme.validate(data.body, {
 			type: "object",
 			properties: {
@@ -74,7 +77,7 @@ privated.updatePeerList = function (cb) {
 			}
 
 			var peers = data.body.peers;
-
+			//再逐个验证请求得到的节点列表中的各个节点
 			async.eachLimit(peers, 2, function (peer, cb) {
 				library.scheme.validate(peer, {
 					type: "object",
@@ -120,14 +123,14 @@ privated.updatePeerList = function (cb) {
 					if (ip.toLong("127.0.0.1") === peer.ip || peer.port === 0 || peer.port > 65535) {
 						return setImmediate(cb);
 					}
-
+					//验证通过就更新本地peers表
 					self.update(peer, cb);
 				});
 			}, cb);
 		});
 	});
 };
-
+//查出本地peers表总共有多少个peer
 privated.count = function (cb) {
 	library.dbLite.query("select count(*) from peers", {"count": Number}, function (err, rows) {
 		if (err) {
@@ -138,7 +141,7 @@ privated.count = function (cb) {
 		cb(null, res);
 	});
 };
-
+//更改state和clock字段，主要是将禁止的状态state=0，修改为1
 privated.banManager = function (cb) {
 	library.dbLite.query("UPDATE peers SET state = 1, clock = null where (state = 0 and clock - $now < 0)", {now: Date.now()}, cb);
 };
@@ -243,13 +246,13 @@ Peer.prototype.list = function (options, cb) {
 		cb(err, rows);
 	});
 };
-
+//更新本地peers表中节点的状态
 Peer.prototype.state = function (pip, port, state, timeoutSeconds, cb) {
 	var isFrozenList = library.config.peers.list.find(function (peer) {
 		return peer.ip == ip.fromLong(pip) && peer.port == port;
-	});
+	});//如果在初始配置的节点表(相当于白名单)里找到该节点，则立即返回不用更新
 	if (isFrozenList !== undefined) return cb && cb("Peer in white list");
-	if (state == 0) {
+	if (state == 0) {//如果是更新为禁止状态，计算禁止时间
 		var clock = (timeoutSeconds || 1) * 1000;
 		clock = Date.now() + clock;
 	} else {
@@ -266,11 +269,11 @@ Peer.prototype.state = function (pip, port, state, timeoutSeconds, cb) {
 		cb && cb();
 	});
 };
-
+//从本地peers表中删除该坏节点
 Peer.prototype.remove = function (pip, port, cb) {
 	var isFrozenList = library.config.peers.list.find(function (peer) {
 		return peer.ip == ip.fromLong(pip) && peer.port == port;
-	});
+	});//如果在初始配置的节点表(相当于白名单)里找到该节点，则立即返回不能删除
 	if (isFrozenList !== undefined) return cb && cb("Peer in white list");
 	library.dbLite.query("DELETE FROM peers WHERE ip = $ip and port = $port;", {
 		ip: pip,
@@ -301,7 +304,7 @@ Peer.prototype.addDapp = function (config, cb) {
 		}, cb);
 	});
 };
-
+//更新本地peers表中调用函数传入的一个peer的信息，或者插入
 Peer.prototype.update = function (peer, cb) {
 	var dappid = peer.dappid;
 	var params = {
@@ -312,17 +315,17 @@ Peer.prototype.update = function (peer, cb) {
 		version: peer.version || null
 	};
 	async.series([
-		function (cb) {
+		function (cb) {//不存在该peer就插入，存在的话这条语句什么都不做
 			library.dbLite.query("INSERT OR IGNORE INTO peers (ip, port, state, os, sharePort, version) VALUES ($ip, $port, $state, $os, $sharePort, $version);", extend({}, params, {state: 1}), cb);
 		},
 		function (cb) {
 			if (peer.state !== undefined) {
 				params.state = peer.state;
-			}
+			}//更新该peer的信息
 			library.dbLite.query("UPDATE peers SET os = $os, sharePort = $sharePort, version = $version" + (peer.state !== undefined ? ", state = CASE WHEN state = 0 THEN state ELSE $state END " : "") + " WHERE ip = $ip and port = $port;", params, cb);
 		},
 		function (cb) {
-			if (dappid) {
+			if (dappid) {//如果有侧链运用，同时更新侧链
 				self.addDapp({dappid: dappid, ip: peer.ip, port: peer.port}, cb);
 			} else {
 				setImmediate(cb);
@@ -343,25 +346,25 @@ Peer.prototype.sandboxApi = function (call, args, cb) {
 Peer.prototype.onBind = function (scope) {
 	modules = scope;
 };
-
-Peer.prototype.onBlockchainReady = function () {
+//在区块链加载结束后触发，依次将配置的节点写入数据库，如果数据库已经存在相同的记录就忽略，然后更新节点列表，触发节点加载完毕事件。
+Peer.prototype.onBlockchainReady = function () {//library.config.peers.list配置了初始节点
 	async.eachSeries(library.config.peers.list, function (peer, cb) {
 		library.dbLite.query("INSERT OR IGNORE INTO peers(ip, port, state, sharePort) VALUES($ip, $port, $state, $sharePort)", {
 			ip: ip.toLong(peer.ip),
 			port: peer.port,
-			state: 2,
+			state: 2,//初始状态为2，都是健康的节点
 			sharePort: Number(true)
 		}, cb);
 	}, function (err) {
 		if (err) {
 			library.logger.error('onBlockchainReady', err);
 		}
-
+		//查出本地peers表总共有多少个peer（当前只有初始配置的节点）
 		privated.count(function (err, count) {
 			if (count) {
-				privated.updatePeerList(function (err) {
+				privated.updatePeerList(function (err) {//通过访问其他节点的节点列表来更新本地节点列表
 					err && library.logger.error('updatePeerList', err);
-					library.bus.message('peerReady');
+					library.bus.message('peerReady');//触发节点加载完毕事件
 				});
 				library.logger.info('Peers ready, stored ' + count);
 			} else {
@@ -370,17 +373,17 @@ Peer.prototype.onBlockchainReady = function () {
 		});
 	});
 };
-
+//在节点加载完毕后触发
 Peer.prototype.onPeerReady = function () {
-	setImmediate(function nextUpdatePeerList() {
+	setImmediate(function nextUpdatePeerList() {//循环更新节点列表
 		privated.updatePeerList(function (err) {
 			err && library.logger.error('updatePeerList timer', err);
 			setTimeout(nextUpdatePeerList, 60 * 1000);
 		})
 	});
 
-	setImmediate(function nextBanManager() {
-		privated.banManager(function (err) {
+	setImmediate(function nextBanManager() {//循环更新节点状态
+		privated.banManager(function (err) {//如果禁止时间到了，将禁止的状态state=0，修改为1
 			err && library.logger.error('banManager timer', err);
 			setTimeout(nextBanManager, 65 * 1000)
 		});
