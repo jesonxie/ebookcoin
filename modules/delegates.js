@@ -285,7 +285,7 @@ privated.attachApi = function () {
 		"get /forging/getForgedByAccount": "getForgedByAccount",
 		"put /": "addDelegate"
 	});
-
+	//如果是测试状态才能使用下面两个api
 	if (process.env.DEBUG) {
 		var tmpKepairs = {};
 
@@ -309,7 +309,7 @@ privated.attachApi = function () {
 			return res.json({success: true});
 		});
 	}
-
+	//受委托人访问本节点，并让本节点记录下密钥对，该密钥对在本机生产区块(轮到该受委托人时)时要用来签名区块
 	router.post('/forging/enable', function (req, res) {
 		var body = req.body;
 		library.scheme.validate(body, {
@@ -332,7 +332,9 @@ privated.attachApi = function () {
 			}
 
 			var ip = req.connection.remoteAddress;
-
+			//如果受委托人访问时使用的电脑的IP不在本节点的forging.access白名单，则拒绝访问。每个节点初始forging.access白名单只有本机地址127.0.0.1
+			//只有满足两种情况才允许：1.受委托人在自己的电脑运行整套程序，再通过浏览器访问该API提交密钥对
+			//2.A电脑(节点)运行整套程序，受委托人用B电脑(节点)去访问A的api，而且A电脑(节点)已经将B电脑(节点)的IP地址写进白名单，需要受委托人对A节点信任
 			if (library.config.forging.access.whiteList.length > 0 && library.config.forging.access.whiteList.indexOf(ip) < 0) {
 				return res.json({success: false, error: "Access denied"});
 			}
@@ -363,7 +365,7 @@ privated.attachApi = function () {
 			});
 		});
 	});
-
+	//与上一个函数相似，区别仅在于请求删除本节点所保存的密钥对
 	router.post('/forging/disable', function (req, res) {
 		var body = req.body;
 		library.scheme.validate(body, {
