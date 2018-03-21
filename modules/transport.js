@@ -472,7 +472,7 @@ Transport.prototype.broadcast = function (config, options, cb) {
 		}
 	});
 };
-
+//在本地节点表随机找一个节点，然后访问该节点的api(在config参数里)获取数据
 Transport.prototype.getFromRandomPeer = function (config, options, cb) {
 	if (typeof options == 'function') {
 		cb = options;
@@ -480,11 +480,11 @@ Transport.prototype.getFromRandomPeer = function (config, options, cb) {
 		config = {};
 	}
 	config.limit = 1;
-	async.retry(20, function (cb) {
-		modules.peer.list(config, function (err, peers) {
+	async.retry(20, function (cb) {//重复调用第一个task函数20次，有正确返回结果就传给回调函数。
+		modules.peer.list(config, function (err, peers) {//从本地节点表查找出一个节点
 			if (!err && peers.length) {
 				var peer = peers[0];
-				self.getFromPeer(peer, options, cb);
+				self.getFromPeer(peer, options, cb);//访问该节点的api获取数据
 			} else {
 				return cb(err || "No peers in db");
 			}
@@ -509,15 +509,16 @@ Transport.prototype.getFromRandomPeer = function (config, options, cb) {
  * 	// Process request
  * });
  */
+//根据调用函数提供的peer，访问该节点的api(在options参数里)获取数据
 Transport.prototype.getFromPeer = function (peer, options, cb) {
 	var url;
-	if (options.api) {
+	if (options.api) {//构造完整的api
 		url = '/peer' + options.api
 	} else {
 		url = options.url;
 	}
 
-	var req = {
+	var req = {//构造请求数据
 		url: 'http://' + ip.fromLong(peer.ip) + ':' + peer.port + url,
 		method: options.method,
 		json: true,
@@ -530,16 +531,16 @@ Transport.prototype.getFromPeer = function (peer, options, cb) {
 		req.body = options.data;
 	}
 
-
+	//访问节点
 	return request(req, function (err, response, body) {
-		if (err || response.statusCode != 200) {
+		if (err || response.statusCode != 200) {//如果出错或者返回状态码不是200
 			library.logger.debug('Request', {
 				url: req.url,
 				statusCode: response ? response.statusCode : 'unknown',
 				err: err
 			});
 
-			if (peer) {
+			if (peer) {//如果调用函数提供的节点数据也不为空，请求超时则表示该节点实际不存在，应该从本地节点列表删除该坏节点
 				if (err && (err.code == "ETIMEDOUT" || err.code == "ESOCKETTIMEDOUT" || err.code == "ECONNREFUSED")) {
 					modules.peer.remove(peer.ip, peer.port, function (err) {
 						if (!err) {
@@ -547,7 +548,7 @@ Transport.prototype.getFromPeer = function (peer, options, cb) {
 						}
 					});
 				} else {
-					if (!options.not_ban) {
+					if (!options.not_ban) {//对于状态码不是200的，比如304等禁止状态，就要更改其状态
 						modules.peer.state(peer.ip, peer.port, 0, 600, function (err) {
 							if (!err) {
 								library.logger.info('Ban 10 min ' + req.method + ' ' + req.url);
@@ -559,10 +560,10 @@ Transport.prototype.getFromPeer = function (peer, options, cb) {
 			cb && cb(err || ('request status code' + response.statusCode));
 			return;
 		}
-
+		//请求成功
 		response.headers.port = parseInt(response.headers.port);
 		response.headers['share-port'] = parseInt(response.headers['share-port']);
-
+		//验证返回数据所包含的内容
 		var report = library.scheme.validate(response.headers, {
 			type: "object",
 			properties: {
@@ -594,7 +595,7 @@ Transport.prototype.getFromPeer = function (peer, options, cb) {
 
 		var port = response.headers.port;
 		if (port > 0 && port <= 65535 && response.headers['version'] == library.config.version) {
-			modules.peer.update({
+			modules.peer.update({//更新刚刚所访问的节点在本地peers表的状态
 				ip: peer.ip,
 				port: port,
 				state: 2,
@@ -603,7 +604,7 @@ Transport.prototype.getFromPeer = function (peer, options, cb) {
 				version: response.headers['version']
 			});
 		}
-
+		//给调用函数返回数据
 		cb && cb(null, {body: body, peer: peer});
 	});
 }
