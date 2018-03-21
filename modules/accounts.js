@@ -527,6 +527,7 @@ Accounts.prototype.onBind = function (scope) {
 };
 
 // Shared
+//他人访问本节点建立一个新账号
 shared.open = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
@@ -566,7 +567,7 @@ shared.open = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点查询某个地址(账号)的余额
 shared.getBalance = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -599,7 +600,7 @@ shared.getBalance = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点查询某个地址的公钥
 shared.getPublickey = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -627,7 +628,7 @@ shared.getPublickey = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点产生公钥(根据访问者提供的密码)
 shared.generatePublickey = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
@@ -655,7 +656,7 @@ shared.generatePublickey = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点获得某个地址(账号)对哪些受委托人投票了
 shared.getDelegates = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -723,12 +724,12 @@ shared.getDelegates = function (req, cb) {
 		});
 	});
 };
-
+//获得注册为受委托人交易的费用
 shared.getDelegatesFee = function (req, cb) {
 	var query = req.body;
 	cb(null, {fee: 1 * constants.fixedPoint});
 };
-
+//访问本节点注册为受委托人
 shared.addDelegates = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
@@ -867,7 +868,7 @@ shared.getUsernameFee = function (req, cb) {
 	var query = req.body;
 	cb(null, {fee: 1 * constants.fixedPoint});
 };
-
+//访问本节点给某个账号添加用户名
 shared.addUsername = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
@@ -1007,7 +1008,7 @@ shared.addUsername = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点获取某个账号(地址)的信息
 shared.getAccount = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -1049,7 +1050,7 @@ shared.getAccount = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点通过用户名来获取该用户的账号信息
 shared.getUsername = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
