@@ -724,12 +724,12 @@ shared.getDelegates = function (req, cb) {
 		});
 	});
 };
-//获得注册为受委托人交易的费用
+//获得为受委托人投票交易的费用
 shared.getDelegatesFee = function (req, cb) {
 	var query = req.body;
 	cb(null, {fee: 1 * constants.fixedPoint});
 };
-//访问本节点注册为受委托人
+//访问本节点为受委托人投票
 shared.addDelegates = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
