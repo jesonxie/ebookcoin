@@ -273,7 +273,7 @@ privated.attachApi = function () {
 	var router = new Router();
 
 	router.use(function (req, res, next) {
-		if (modules && privated.loaded) return next();
+		if (modules && privated.loaded) return next();//在本地区块链加载完毕后才能正常提供api
 		res.status(500).send({success: false, error: "Blockchain is loading"});
 	});
 
@@ -446,7 +446,7 @@ privated.attachApi = function () {
 	 "get /forging/status": "statusForging"
 	 });*/
 
-	library.network.app.use('/api/delegates', router);
+	library.network.app.use('/api/delegates', router);//定义父路径
 	library.network.app.use(function (err, req, res, next) {
 		if (!err) return next();
 		library.logger.error(req.url, err.toString());
@@ -482,7 +482,7 @@ privated.getBlockSlotData = function (slot, height, cb) {
 			var delegate_pos = currentSlot % constants.delegates;
 
 			var delegate_id = activeDelegates[delegate_pos];
-
+			//如果本节点有在该slot生产区块的受委托人的密钥对本节点才可以执行后面的语句生产出一个区块
 			if (delegate_id && privated.keypairs[delegate_id]) {
 				return cb(null, {time: slots.getSlotTime(currentSlot), keypair: privated.keypairs[delegate_id]});
 			}
@@ -512,7 +512,7 @@ privated.loop = function (cb) {
 	}
 	//获得块时段数据，为区块提供了密钥对和时间戳
 	privated.getBlockSlotData(currentSlot, lastBlock.height + 1, function (err, currentBlockData) {
-		if (err || currentBlockData === null) {
+		if (err || currentBlockData === null) {//如果无法获得(密钥对)，则立即返回，打印skiping slot
 			library.logger.log('Loop', 'skiping slot');
 			return setImmediate(cb);
 		}
@@ -762,6 +762,7 @@ Delegates.prototype.cleanup = function (cb) {
 };
 
 // Shared
+//访问本节点获得某个受代理人(通过给定的公钥或用户名)的信息
 shared.getDelegate = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -834,7 +835,7 @@ shared.getDelegate = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点获得对某个受委托人(他的publickey)投了票的所有账号
 shared.getVoters = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -875,7 +876,7 @@ shared.getVoters = function (req, cb) {
 		});
 	});
 };
-
+//访问本节点获得最多101位受委托人的信息
 shared.getDelegates = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -961,7 +962,7 @@ shared.getFee = function (req, cb) {
 
 	cb(null, {fee: fee});
 };
-
+//访问本节点查询某个账号(受委托人)生产区块的奖励和得到的矿工费
 shared.getForgedByAccount = function (req, cb) {
 	var query = req.body;
 	library.scheme.validate(query, {
@@ -1023,6 +1024,7 @@ privated.statusForging = function (req, cb) {
  *     "transaction": "transaction object"
  * }
  */
+//访问本节点注册为受代理人
 shared.addDelegate = function (req, cb) {
 	var body = req.body;
 	library.scheme.validate(body, {
